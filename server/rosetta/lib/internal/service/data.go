@@ -19,7 +19,7 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		err    error
 	)
 
-	fmt.Println(request)
+	fmt.Println(*request)
 
 	switch {
 	case request.BlockIdentifier == nil:
