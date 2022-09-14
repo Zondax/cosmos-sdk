@@ -21,7 +21,11 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 
 	switch {
 	case request.BlockIdentifier == nil:
-		block, err = on.client.BlockByHeight(ctx, nil)
+		syncStatus, err := on.client.Status(ctx)
+		if err != nil {
+			return nil, errors.ToRosetta(err)
+		}
+		block, err = on.client.BlockByHeight(ctx, syncStatus.CurrentIndex)
 		if err != nil {
 			return nil, errors.ToRosetta(err)
 		}
