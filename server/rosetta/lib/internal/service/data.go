@@ -19,10 +19,10 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		err    error
 	)
 
-	fmt.Println(*request)
-
 	switch {
 	case request.BlockIdentifier == nil:
+		fmt.Println("No block identifier")
+
 		syncStatus, err := on.client.Status(ctx)
 		if err != nil {
 			return nil, errors.ToRosetta(err)
@@ -32,12 +32,16 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 			return nil, errors.ToRosetta(err)
 		}
 	case request.BlockIdentifier.Hash != nil:
+		fmt.Println(request.BlockIdentifier)
+
 		block, err = on.client.BlockByHash(ctx, *request.BlockIdentifier.Hash)
 		if err != nil {
 			return nil, errors.ToRosetta(err)
 		}
 		height = block.Block.Index
 	case request.BlockIdentifier.Index != nil:
+		fmt.Println(request.BlockIdentifier)
+
 		height = *request.BlockIdentifier.Index
 		block, err = on.client.BlockByHeight(ctx, &height)
 		if err != nil {
