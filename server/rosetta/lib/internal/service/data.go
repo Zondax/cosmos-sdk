@@ -42,7 +42,8 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		height = block.Block.Index
 	case request.BlockIdentifier.Index != nil:
 		fmt.Println("We have a block identifier index")
-		fmt.Println(request.BlockIdentifier)
+		fmt.Println(request.BlockIdentifier.Index)
+		fmt.Println(*request.BlockIdentifier.Index)
 
 		height = *request.BlockIdentifier.Index
 		block, err = on.client.BlockByHeight(ctx, &height)
