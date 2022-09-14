@@ -202,8 +202,6 @@ func (c *Client) BlockByHeight(ctx context.Context, height *int64) (crgtypes.Blo
 		return crgtypes.BlockResponse{}, crgerrs.WrapError(crgerrs.ErrBadGateway, err.Error())
 	}
 
-	fmt.Println(block.Block)
-
 	return c.converter.ToRosetta().BlockResponse(block), nil
 }
 

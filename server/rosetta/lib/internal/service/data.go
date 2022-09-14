@@ -144,8 +144,6 @@ func (on OnlineNetwork) NetworkStatus(ctx context.Context, _ *types.NetworkReque
 	if err != nil {
 		return nil, errors.ToRosetta(err)
 	}
-
-	fmt.Println(syncStatus)
 	
 	block, err := on.client.BlockByHeight(ctx, syncStatus.CurrentIndex)
 	if err != nil {
