@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"encoding/json"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
 
@@ -57,7 +58,8 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		return nil, errors.ToRosetta(err)
 	}
 
-	fmt.Println(accountCoins)
+	s, _ := json.Marshal(accountCoins)
+	fmt.Println(s)
 
 	return &types.AccountBalanceResponse{
 		BlockIdentifier: block.Block,
