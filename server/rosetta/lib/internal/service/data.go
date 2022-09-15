@@ -33,7 +33,6 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		}
 	case request.BlockIdentifier.Hash != nil:
 		fmt.Println("We have block identifier hash")
-		fmt.Println(request.BlockIdentifier)
 
 		block, err = on.client.BlockByHash(ctx, *request.BlockIdentifier.Hash)
 		if err != nil {
@@ -42,7 +41,6 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		height = block.Block.Index
 	case request.BlockIdentifier.Index != nil:
 		fmt.Println("We have a block identifier index")
-		fmt.Println(request.BlockIdentifier.Index)
 		fmt.Println(*request.BlockIdentifier.Index)
 
 		height = *request.BlockIdentifier.Index
@@ -52,10 +50,14 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 		}
 	}
 
+	fmt.Println(request.AccountIdentifier.Address)
+
 	accountCoins, err := on.client.Balances(ctx, request.AccountIdentifier.Address, &height)
 	if err != nil {
 		return nil, errors.ToRosetta(err)
 	}
+
+	fmt.Println(accountCoins)
 
 	return &types.AccountBalanceResponse{
 		BlockIdentifier: block.Block,
