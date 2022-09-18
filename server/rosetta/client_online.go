@@ -237,9 +237,11 @@ func (c *Client) coins(ctx context.Context) (sdk.Coins, error) {
 		return nil, crgerrs.FromGRPCToRosettaError(err)
 	}
 
-	for supply.GetPagination() != nil {
+	for supply.GetPagination().GetNextKey() != nil {
 		//supply, err = c.bank.TotalSupply(ctx, &bank.QueryTotalSupplyRequest{Pagination: v1beta11.PageRequest{ Key: supply.GetPagination().NextKey()}})
 		// get next key
+		fmt.Println("Get next page")
+
 		page := supply.GetPagination()
 		if page == nil {
 			return nil, crgerrs.WrapError(crgerrs.ErrCodec, fmt.Sprintf("error pagination"))
@@ -250,6 +252,8 @@ func (c *Client) coins(ctx context.Context) (sdk.Coins, error) {
 		if err != nil {
 			return nil, crgerrs.FromGRPCToRosettaError(err)
 		}
+
+		fmt.Println(supply)
 
 		result = append(result[:0], supply.Supply[:]...)
 	}
