@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"time"
-	"fmt"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
 
