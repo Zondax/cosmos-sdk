@@ -67,6 +67,7 @@ func (on OnlineNetwork) AccountBalance(ctx context.Context, request *types.Accou
 
 // Block gets the transactions in the given block
 func (on OnlineNetwork) Block(ctx context.Context, request *types.BlockRequest) (*types.BlockResponse, *types.Error) {
+	fmt.Println("Calling /block")
 	var (
 		blockResponse crgtypes.BlockTransactionsResponse
 		err           error
@@ -92,6 +93,7 @@ func (on OnlineNetwork) Block(ctx context.Context, request *types.BlockRequest) 
 
 	default:
 		// both empty
+		fmt.Println("Both empty - we do current height")
 		blockResponse, err = on.client.BlockTransactionsByHeight(ctx, nil)
 		if err != nil {
 			return nil, errors.ToRosetta(err)
@@ -124,6 +126,7 @@ func (on OnlineNetwork) Block(ctx context.Context, request *types.BlockRequest) 
 // BlockTransaction gets the given transaction in the specified block, we do not need to check the block itself too
 // due to the fact that tendermint achieves instant finality
 func (on OnlineNetwork) BlockTransaction(ctx context.Context, request *types.BlockTransactionRequest) (*types.BlockTransactionResponse, *types.Error) {
+	fmt.Printf("Calling /block/transaction")
 	tx, err := on.client.GetTx(ctx, request.TransactionIdentifier.Hash)
 	if err != nil {
 		return nil, errors.ToRosetta(err)
@@ -160,6 +163,7 @@ func (on OnlineNetwork) MempoolTransaction(ctx context.Context, request *types.M
 }
 
 func (on OnlineNetwork) NetworkList(_ context.Context, _ *types.MetadataRequest) (*types.NetworkListResponse, *types.Error) {
+	fmt.Println("/network/list")
 	return &types.NetworkListResponse{NetworkIdentifiers: []*types.NetworkIdentifier{on.network}}, nil
 }
 
@@ -168,6 +172,7 @@ func (on OnlineNetwork) NetworkOptions(_ context.Context, _ *types.NetworkReques
 }
 
 func (on OnlineNetwork) NetworkStatus(ctx context.Context, _ *types.NetworkRequest) (*types.NetworkStatusResponse, *types.Error) {
+	fmt.Printf("/network/status")
 	syncStatus, err := on.client.Status(ctx)
 	if err != nil {
 		return nil, errors.ToRosetta(err)

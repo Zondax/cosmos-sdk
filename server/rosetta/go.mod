@@ -5,7 +5,7 @@ go 1.18
 require (
 	cosmossdk.io/math v1.0.0-beta.3
 	github.com/btcsuite/btcd v0.22.1
-	github.com/coinbase/rosetta-sdk-go v0.8.0
+	github.com/coinbase/rosetta-sdk-go v0.8.2-0.20221007214527-e03849ba430a
 	github.com/cosmos/cosmos-sdk v0.46.1
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5

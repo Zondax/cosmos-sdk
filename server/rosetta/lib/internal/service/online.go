@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"time"
+	"fmt"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
 
@@ -24,6 +25,8 @@ func NewOnlineNetwork(network *types.NetworkIdentifier, client crgtypes.Client) 
 	if err != nil {
 		return OnlineNetwork{}, err
 	}*/
+
+	fmt.Println("What")
 
 	block := types.BlockIdentifier{
 		Index: 9283650, // Theta upgrade height
