@@ -26,8 +26,6 @@ func NewOnlineNetwork(network *types.NetworkIdentifier, client crgtypes.Client) 
 		return OnlineNetwork{}, err
 	}*/
 
-	fmt.Println("What")
-
 	block := types.BlockIdentifier{
 		Index: 9283650, // Theta upgrade height
 		Hash:  "0x09E5CC1760C63AB706C79D936024E35AE226D983724F3BB026C4BD1407CDB7FD",
