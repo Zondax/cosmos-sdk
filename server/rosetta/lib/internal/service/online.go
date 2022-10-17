@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -31,7 +32,12 @@ func NewOnlineNetwork(network *types.NetworkIdentifier, client crgtypes.Client) 
 
 	// Get genesis hash from ENV. It should be set by an external script since is not possible to get
 	// using tendermint API
-	block.Block.Hash = os.Getenv(genesisHashEnv)
+	genesisHash := os.Getenv(genesisHashEnv)
+	if genesisHash == "" {
+		_ = fmt.Sprintf("[Warning]- Genesis hash env '%s' is not properly set!", genesisHashEnv)
+	}
+
+	block.Block.Hash = genesisHash
 
 	return OnlineNetwork{
 		client:                 client,
