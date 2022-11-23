@@ -2,7 +2,11 @@ package rosetta
 
 import (
 	"bytes"
+<<<<<<< HEAD
 	"context"
+=======
+	"encoding/base64"
+>>>>>>> 9325bd2291... fix: decode base64
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -344,8 +348,16 @@ func sdkEventToBalanceOperations(status string, event abci.Event) (operations []
 	default:
 		return nil, false
 	case banktypes.EventTypeCoinSpent:
-		spender := sdk.MustAccAddressFromBech32(event.Attributes[0].Value)
-		coins, err := sdk.ParseCoinsNormalized(event.Attributes[1].Value)
+		addr, err := base64.StdEncoding.DecodeString(event.Attributes[0].Value)
+		if err != nil {
+			panic(err)
+		}
+		spender := sdk.MustAccAddressFromBech32(string(addr))
+		coin, err := base64.StdEncoding.DecodeString(event.Attributes[1].Value)
+		if err != nil {
+			panic(err)
+		}
+		coins, err := sdk.ParseCoinsNormalized(string(coin))
 		if err != nil {
 			panic(err)
 		}
@@ -355,8 +367,16 @@ func sdkEventToBalanceOperations(status string, event abci.Event) (operations []
 		accountIdentifier = spender.String()
 
 	case banktypes.EventTypeCoinReceived:
-		receiver := sdk.MustAccAddressFromBech32(event.Attributes[0].Value)
-		coins, err := sdk.ParseCoinsNormalized(event.Attributes[1].Value)
+		addr, err := base64.StdEncoding.DecodeString(event.Attributes[0].Value)
+		if err != nil {
+			panic(err)
+		}
+		receiver := sdk.MustAccAddressFromBech32(string(addr))
+		coin, err := base64.StdEncoding.DecodeString(event.Attributes[1].Value)
+		if err != nil {
+			panic(err)
+		}
+		coins, err := sdk.ParseCoinsNormalized(string(coin))
 		if err != nil {
 			panic(err)
 		}
@@ -368,7 +388,11 @@ func sdkEventToBalanceOperations(status string, event abci.Event) (operations []
 	// rosetta does not have the concept of burning coins, so we need to mock
 	// the burn as a send to an address that cannot be resolved to anything
 	case banktypes.EventTypeCoinBurn:
-		coins, err := sdk.ParseCoinsNormalized(event.Attributes[1].Value)
+		coin, err := base64.StdEncoding.DecodeString(event.Attributes[1].Value)
+		if err != nil {
+			panic(err)
+		}
+		coins, err := sdk.ParseCoinsNormalized(string(coin))
 		if err != nil {
 			panic(err)
 		}
