@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	cosmossdk.io/api v0.2.6
-	cosmossdk.io/core v0.4.0
+	cosmossdk.io/core v0.5.0
 	cosmossdk.io/depinject v1.0.0-alpha.3
 	cosmossdk.io/errors v1.0.0-beta.7
 	cosmossdk.io/math v1.0.0-beta.4
@@ -17,7 +17,7 @@ require (
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.1
 	github.com/tendermint/tendermint v0.37.0-rc2
-	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f
+	google.golang.org/genproto v0.0.0-20230112194545-e10362b5ecf9
 	google.golang.org/grpc v1.52.0
 )
 
