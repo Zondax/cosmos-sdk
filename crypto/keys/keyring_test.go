@@ -3,7 +3,6 @@ package keys
 
 import (
 	"crypto/sha256"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -342,8 +341,4 @@ func TestKeyDerivation(t *testing.T) {
 	assert.NotEmpty(t, derivedKey)
 	require.NotNil(t, derivedKey)
 	require.Equal(t, 60, len(derivedKey))
-
-	fmt.Println("the derivation key is", derivedKey, len(derivedKey), string(derivedKey))
-
-	// fmt.Println("the old derivation key is", oldDerivedKey, len(oldDerivedKey), string(oldDerivedKey))
 }
