@@ -523,7 +523,7 @@ func lkbToKeyringConfig(name, dir string, buf io.Reader, test bool) keyring.Conf
 
 			saltBytes := crypto.CRandBytes(16)
 
-			passwordHash := pdkdf2.Key([]byte(pass), saltBytes, 10, 24, sha256.New)
+			passwordHash := pdkdf2.Key([]byte(pass), saltBytes, 10, 60, sha256.New)
 
 			if err := ioutil.WriteFile(dir+"/keyhash", passwordHash, 0555); err != nil {
 				return "", err

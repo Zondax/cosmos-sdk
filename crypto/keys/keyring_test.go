@@ -2,12 +2,16 @@
 package keys
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tendermint/crypto/bcrypt"
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/ed25519"
+	pdkdf2 "golang.org/x/crypto/pbkdf2"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/hd"
 	"github.com/cosmos/cosmos-sdk/tests"
@@ -322,4 +326,24 @@ func TestLazySeedPhraseKeyRing(t *testing.T) {
 	require.Equal(t, n2, newInfo.GetName())
 	require.Equal(t, info.GetPubKey().Address(), newInfo.GetPubKey().Address())
 	require.Equal(t, info.GetPubKey(), newInfo.GetPubKey())
+}
+
+func TestKeyDerivation(t *testing.T) {
+	passPhrase := "RandomPassPhrase"
+	saltBytes := crypto.CRandBytes(16)
+
+	oldDerivedKey, err := bcrypt.GenerateFromPassword(saltBytes, []byte(passPhrase), 2)
+	assert.NotEmpty(t, oldDerivedKey)
+	require.NotNil(t, oldDerivedKey)
+	require.Equal(t, 60, len(oldDerivedKey))
+	require.NoError(t, err)
+
+	derivedKey := pdkdf2.Key([]byte(passPhrase), saltBytes, 10, 60, sha256.New)
+	assert.NotEmpty(t, derivedKey)
+	require.NotNil(t, derivedKey)
+	require.Equal(t, 60, len(derivedKey))
+
+	fmt.Println("the derivation key is", derivedKey, len(derivedKey), string(derivedKey))
+
+	// fmt.Println("the old derivation key is", oldDerivedKey, len(oldDerivedKey), string(oldDerivedKey))
 }
