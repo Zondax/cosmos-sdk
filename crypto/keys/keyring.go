@@ -2,6 +2,7 @@ package keys
 
 import (
 	"bufio"
+	"crypto/hmac"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -523,9 +524,13 @@ func lkbToKeyringConfig(name, dir string, buf io.Reader, test bool) keyring.Conf
 
 			saltBytes := crypto.CRandBytes(16)
 
-			passwordHash := pdkdf2.Key([]byte(pass), saltBytes, 10, 60, sha256.New)
+			//Create a password hash with MAC to differentiate old bcrypt.GeneratePassword from pdkdf2
+			mac := hmac.New(sha256.New, []byte(pass))
+			passwordHash := pdkdf2.Key([]byte(pass), saltBytes, 4096, 60, sha256.New)
+			mac.Write(passwordHash)
+			passwordHashMac := mac.Sum(nil)
 
-			if err := ioutil.WriteFile(dir+"/keyhash", passwordHash, 0555); err != nil {
+			if err := ioutil.WriteFile(dir+"/keyhash", passwordHashMac, 0555); err != nil {
 				return "", err
 			}
 

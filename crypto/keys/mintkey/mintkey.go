@@ -1,17 +1,20 @@
 package mintkey
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/keyerror"
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/armor"
 	cryptoAmino "github.com/tendermint/tendermint/crypto/encoding/amino"
 	"github.com/tendermint/tendermint/crypto/xsalsa20symmetric"
 
-	"github.com/cosmos/cosmos-sdk/crypto/keys/keyerror"
+	cmn "github.com/tendermint/tendermint/libs/common"
 
+	"github.com/tendermint/crypto/bcrypt"
 	pdkdf2 "golang.org/x/crypto/pbkdf2"
 )
 
@@ -105,10 +108,11 @@ func EncryptArmorPrivKey(privKey crypto.PrivKey, passphrase string) string {
 // encrypted priv key.
 func encryptPrivKey(privKey crypto.PrivKey, passphrase string) (saltBytes []byte, encBytes []byte) {
 	saltBytes = crypto.CRandBytes(16)
-	key := pdkdf2.Key([]byte(passphrase), saltBytes, BcryptSecurityParameter, 24, sha256.New)
-
+	key := pdkdf2.Key([]byte(passphrase), saltBytes, BcryptSecurityParameter, 60, sha256.New)
 	key = crypto.Sha256(key) // get 32 bytes
 	privKeyBytes := privKey.Bytes()
+	privKeyBytesHash := crypto.Sha256(privKeyBytes)
+	privKeyBytes = append(privKeyBytes, privKeyBytesHash...) // Add own hash to differentiate it from old implementation
 	return saltBytes, xsalsa20symmetric.EncryptSymmetric(privKeyBytes, key)
 }
 
@@ -137,15 +141,42 @@ func UnarmorDecryptPrivKey(armorStr string, passphrase string) (crypto.PrivKey, 
 }
 
 func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string) (privKey crypto.PrivKey, err error) {
-	key := pdkdf2.Key([]byte(passphrase), saltBytes, BcryptSecurityParameter, 24, sha256.New)
-
+	key := pdkdf2.Key([]byte(passphrase), saltBytes, BcryptSecurityParameter, 60, sha256.New)
 	key = crypto.Sha256(key) // Get 32 bytes
-	privKeyBytes, err := xsalsa20symmetric.DecryptSymmetric(encBytes, key)
-	if err != nil && err.Error() == "Ciphertext decryption failed" {
-		return privKey, keyerror.NewErrWrongPassword()
-	} else if err != nil {
+
+	privateBytes, err := decryptSymmetric(encBytes, key)
+	if err == nil || len(privateBytes) > 32 {
+		decryptedBytes := privateBytes[:len(privateBytes)-32]
+		decryptedBytesHash := privateBytes[len(privateBytes)-32:] //SHA-256 hash is 32 bytes
+		//If the decrypted hash doesn't match the privateBytes hash, then we are working with the old bcrypt algorithm
+		if !bytes.Equal(crypto.Sha256(decryptedBytes), decryptedBytesHash) {
+			decryptedBytes, err = decryptPrivKeyLegacy(saltBytes, encBytes, passphrase)
+		}
+	} else {
+		privateBytes, err = decryptPrivKeyLegacy(saltBytes, encBytes, passphrase)
+	}
+
+	if err != nil {
 		return privKey, err
 	}
-	privKey, err = cryptoAmino.PrivKeyFromBytes(privKeyBytes)
+	privKey, err = cryptoAmino.PrivKeyFromBytes(privateBytes)
 	return privKey, err
+}
+
+func decryptPrivKeyLegacy(saltBytes []byte, encBytes []byte, passphrase string) (decryptedBytes []byte, err error) {
+	key, err := bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), BcryptSecurityParameter)
+	if err != nil {
+		cmn.Exit("error generating bcrypt key from passphrase: " + err.Error())
+	}
+	return decryptSymmetric(encBytes, key)
+}
+
+func decryptSymmetric(encBytes []byte, key []byte) (decryptedBytes []byte, err error) {
+	decryptedBytes, err = xsalsa20symmetric.DecryptSymmetric(encBytes, key)
+	if err != nil && err.Error() == "Ciphertext decryption failed" {
+		return decryptedBytes, keyerror.NewErrWrongPassword()
+	} else if err != nil {
+		return decryptedBytes, err
+	}
+	return decryptedBytes, nil
 }
