@@ -1,18 +1,16 @@
 package simulation
 
-// DONTCOVER
-
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/cosmos/cosmos-sdk/x/simulation"
-	"github.com/cosmos/cosmos-sdk/x/slashing/internal/types"
+	"github.com/cosmos/cosmos-sdk/types/simulation"
+	"github.com/cosmos/cosmos-sdk/x/slashing/types"
 )
 
 // Simulation parameter constants
@@ -30,7 +28,7 @@ func GenSignedBlocksWindow(r *rand.Rand) int64 {
 }
 
 // GenMinSignedPerWindow randomized MinSignedPerWindow
-func GenMinSignedPerWindow(r *rand.Rand) sdk.Dec {
+func GenMinSignedPerWindow(r *rand.Rand) math.LegacyDec {
 	return sdk.NewDecWithPrec(int64(r.Intn(10)), 1)
 }
 
@@ -40,13 +38,13 @@ func GenDowntimeJailDuration(r *rand.Rand) time.Duration {
 }
 
 // GenSlashFractionDoubleSign randomized SlashFractionDoubleSign
-func GenSlashFractionDoubleSign(r *rand.Rand) sdk.Dec {
-	return sdk.NewDec(1).Quo(sdk.NewDec(int64(r.Intn(50) + 1)))
+func GenSlashFractionDoubleSign(r *rand.Rand) math.LegacyDec {
+	return math.LegacyNewDec(1).Quo(math.LegacyNewDec(int64(r.Intn(50) + 1)))
 }
 
 // GenSlashFractionDowntime randomized SlashFractionDowntime
-func GenSlashFractionDowntime(r *rand.Rand) sdk.Dec {
-	return sdk.NewDec(1).Quo(sdk.NewDec(int64(r.Intn(200) + 1)))
+func GenSlashFractionDowntime(r *rand.Rand) math.LegacyDec {
+	return math.LegacyNewDec(1).Quo(math.LegacyNewDec(int64(r.Intn(200) + 1)))
 }
 
 // RandomizedGenState generates a random GenesisState for slashing
@@ -82,12 +80,16 @@ func RandomizedGenState(simState *module.SimulationState) {
 	)
 
 	params := types.NewParams(
-		simState.UnbondTime, signedBlocksWindow, minSignedPerWindow,
-		downtimeJailDuration, slashFractionDoubleSign, slashFractionDowntime,
+		signedBlocksWindow, minSignedPerWindow, downtimeJailDuration,
+		slashFractionDoubleSign, slashFractionDowntime,
 	)
 
-	slashingGenesis := types.NewGenesisState(params, nil, nil)
+	slashingGenesis := types.NewGenesisState(params, []types.SigningInfo{}, []types.ValidatorMissedBlocks{})
 
-	fmt.Printf("Selected randomly generated slashing parameters:\n%s\n", codec.MustMarshalJSONIndent(simState.Cdc, slashingGenesis.Params))
+	bz, err := json.MarshalIndent(&slashingGenesis, "", " ")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Selected randomly generated slashing parameters:\n%s\n", bz)
 	simState.GenState[types.ModuleName] = simState.Cdc.MustMarshalJSON(slashingGenesis)
 }

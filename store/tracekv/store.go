@@ -3,10 +3,11 @@ package tracekv
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 
-	"github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/errors"
+
+	"cosmossdk.io/store/types"
 )
 
 const (
@@ -60,6 +61,7 @@ func (tkv *Store) Get(key []byte) []byte {
 // Set implements the KVStore interface. It traces a write operation and
 // delegates the Set call to the parent KVStore.
 func (tkv *Store) Set(key []byte, value []byte) {
+	types.AssertValidKey(key)
 	writeOperation(tkv.writer, writeOp, tkv.context, key, value)
 	tkv.parent.Set(key, value)
 }
@@ -78,13 +80,13 @@ func (tkv *Store) Has(key []byte) bool {
 }
 
 // Iterator implements the KVStore interface. It delegates the Iterator call
-// the to the parent KVStore.
+// to the parent KVStore.
 func (tkv *Store) Iterator(start, end []byte) types.Iterator {
 	return tkv.iterator(start, end, true)
 }
 
 // ReverseIterator implements the KVStore interface. It delegates the
-// ReverseIterator call the to the parent KVStore.
+// ReverseIterator call to the parent KVStore.
 func (tkv *Store) ReverseIterator(start, end []byte) types.Iterator {
 	return tkv.iterator(start, end, false)
 }
@@ -145,8 +147,13 @@ func (ti *traceIterator) Value() []byte {
 }
 
 // Close implements the Iterator interface.
-func (ti *traceIterator) Close() {
-	ti.parent.Close()
+func (ti *traceIterator) Close() error {
+	return ti.parent.Close()
+}
+
+// Error delegates the Error call to the parent iterator.
+func (ti *traceIterator) Error() error {
+	return ti.parent.Error()
 }
 
 // GetStoreType implements the KVStore interface. It returns the underlying
@@ -155,16 +162,16 @@ func (tkv *Store) GetStoreType() types.StoreType {
 	return tkv.parent.GetStoreType()
 }
 
-// CacheWrap implements the KVStore interface. It panics as a Store
-// cannot be cache wrapped.
+// CacheWrap implements the KVStore interface. It panics because a Store
+// cannot be branched.
 func (tkv *Store) CacheWrap() types.CacheWrap {
-	panic("cannot CacheWrap a Store")
+	panic("cannot CacheWrap a TraceKVStore")
 }
 
 // CacheWrapWithTrace implements the KVStore interface. It panics as a
-// Store cannot be cache wrapped.
+// Store cannot be branched.
 func (tkv *Store) CacheWrapWithTrace(_ io.Writer, _ types.TraceContext) types.CacheWrap {
-	panic("cannot CacheWrapWithTrace a Store")
+	panic("cannot CacheWrapWithTrace a TraceKVStore")
 }
 
 // writeOperation writes a KVStore operation to the underlying io.Writer as
@@ -182,11 +189,11 @@ func writeOperation(w io.Writer, op operation, tc types.TraceContext, key, value
 
 	raw, err := json.Marshal(traceOp)
 	if err != nil {
-		panic(fmt.Sprintf("failed to serialize trace operation: %v", err))
+		panic(errors.Wrap(err, "failed to serialize trace operation"))
 	}
 
 	if _, err := w.Write(raw); err != nil {
-		panic(fmt.Sprintf("failed to write trace operation: %v", err))
+		panic(errors.Wrap(err, "failed to write trace operation"))
 	}
 
 	io.WriteString(w, "\n")

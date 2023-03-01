@@ -3,8 +3,8 @@ package cache
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/store/cachekv"
-	"github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/store/cachekv"
+	"cosmossdk.io/store/types"
 
 	lru "github.com/hashicorp/golang-lru"
 )
@@ -81,10 +81,15 @@ func (cmgr *CommitKVStoreCacheManager) Unwrap(key types.StoreKey) types.CommitKV
 
 // Reset resets in the internal caches.
 func (cmgr *CommitKVStoreCacheManager) Reset() {
-	cmgr.caches = make(map[string]types.CommitKVStore)
+	// Clear the map.
+	// Please note that we are purposefully using the map clearing idiom.
+	// See https://github.com/cosmos/cosmos-sdk/issues/6681.
+	for key := range cmgr.caches {
+		delete(cmgr.caches, key)
+	}
 }
 
-// CacheWrap returns the inter-block cache as a cache-wrapped CommitKVStore.
+// CacheWrap implements the CacheWrapper interface
 func (ckv *CommitKVStoreCache) CacheWrap() types.CacheWrap {
 	return cachekv.NewStore(ckv)
 }

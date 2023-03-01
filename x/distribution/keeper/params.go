@@ -1,68 +1,47 @@
 package keeper
 
 import (
+	"cosmossdk.io/math"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/params"
+	"github.com/cosmos/cosmos-sdk/x/distribution/types"
 )
 
-// type declaration for parameters
-func ParamKeyTable() params.KeyTable {
-	return params.NewKeyTable(
-		ParamStoreKeyCommunityTax, sdk.Dec{},
-		ParamStoreKeyBaseProposerReward, sdk.Dec{},
-		ParamStoreKeyBonusProposerReward, sdk.Dec{},
-		ParamStoreKeyWithdrawAddrEnabled, false,
-	)
+// GetParams returns the total set of distribution parameters.
+func (k Keeper) GetParams(clientCtx sdk.Context) (params types.Params) {
+	store := clientCtx.KVStore(k.storeKey)
+	bz := store.Get(types.ParamsKey)
+	if bz == nil {
+		return params
+	}
+
+	k.cdc.MustUnmarshal(bz, &params)
+	return params
 }
 
-// returns the current CommunityTax rate from the global param store
-// nolint: errcheck
-func (k Keeper) GetCommunityTax(ctx sdk.Context) sdk.Dec {
-	var percent sdk.Dec
-	k.paramSpace.Get(ctx, ParamStoreKeyCommunityTax, &percent)
-	return percent
+// SetParams sets the distribution parameters to the param space.
+func (k Keeper) SetParams(ctx sdk.Context, params types.Params) error {
+	if err := params.ValidateBasic(); err != nil {
+		return err
+	}
+
+	store := ctx.KVStore(k.storeKey)
+	bz, err := k.cdc.Marshal(&params)
+	if err != nil {
+		return err
+	}
+	store.Set(types.ParamsKey, bz)
+
+	return nil
 }
 
-// nolint: errcheck
-func (k Keeper) SetCommunityTax(ctx sdk.Context, percent sdk.Dec) {
-	k.paramSpace.Set(ctx, ParamStoreKeyCommunityTax, &percent)
+// GetCommunityTax returns the current distribution community tax.
+func (k Keeper) GetCommunityTax(ctx sdk.Context) math.LegacyDec {
+	return k.GetParams(ctx).CommunityTax
 }
 
-// returns the current BaseProposerReward rate from the global param store
-// nolint: errcheck
-func (k Keeper) GetBaseProposerReward(ctx sdk.Context) sdk.Dec {
-	var percent sdk.Dec
-	k.paramSpace.Get(ctx, ParamStoreKeyBaseProposerReward, &percent)
-	return percent
-}
-
-// nolint: errcheck
-func (k Keeper) SetBaseProposerReward(ctx sdk.Context, percent sdk.Dec) {
-	k.paramSpace.Set(ctx, ParamStoreKeyBaseProposerReward, &percent)
-}
-
-// returns the current BaseProposerReward rate from the global param store
-// nolint: errcheck
-func (k Keeper) GetBonusProposerReward(ctx sdk.Context) sdk.Dec {
-	var percent sdk.Dec
-	k.paramSpace.Get(ctx, ParamStoreKeyBonusProposerReward, &percent)
-	return percent
-}
-
-// nolint: errcheck
-func (k Keeper) SetBonusProposerReward(ctx sdk.Context, percent sdk.Dec) {
-	k.paramSpace.Set(ctx, ParamStoreKeyBonusProposerReward, &percent)
-}
-
-// returns the current WithdrawAddrEnabled
-// nolint: errcheck
-func (k Keeper) GetWithdrawAddrEnabled(ctx sdk.Context) bool {
-	var enabled bool
-	k.paramSpace.Get(ctx, ParamStoreKeyWithdrawAddrEnabled, &enabled)
-	return enabled
-}
-
-// nolint: errcheck
-func (k Keeper) SetWithdrawAddrEnabled(ctx sdk.Context, enabled bool) {
-	k.paramSpace.Set(ctx, ParamStoreKeyWithdrawAddrEnabled, &enabled)
+// GetWithdrawAddrEnabled returns the current distribution withdraw address
+// enabled parameter.
+func (k Keeper) GetWithdrawAddrEnabled(ctx sdk.Context) (enabled bool) {
+	return k.GetParams(ctx).WithdrawAddrEnabled
 }

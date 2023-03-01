@@ -2,11 +2,12 @@
 
 ## Changelog
 
-- 2019 July 31: Initial draft
+* 2019 July 31: Initial draft
+* 2019 October 24: Initial implementation
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -16,7 +17,7 @@ evidence can be submitted, evaluated and verified resulting in some agreed upon
 penalty for any misbehavior committed by a validator, such as equivocation (double-voting),
 signing when unbonded, signing an incorrect state transition (in the future), etc.
 Furthermore, such a mechanism is paramount for any
-[IBC](https://github.com/cosmos/ics/blob/master/ibc/1_IBC_ARCHITECTURE.md) or
+[IBC](https://github.com/cosmos/ics/blob/master/ibc/2_IBC_ARCHITECTURE.md) or
 cross-chain validation protocol implementation in order to support the ability
 for any misbehavior to be relayed back from a collateralized chain to a primary
 chain so that the equivocating validator(s) can be slashed.
@@ -26,15 +27,15 @@ chain so that the equivocating validator(s) can be slashed.
 We will implement an evidence module in the Cosmos SDK supporting the following
 functionality:
 
-- Provide developers with the abstractions and interfaces necessary to define
-custom evidence messages, message handlers, and methods to slash and penalize
-accordingly for misbehavior.
-- Support the ability to route evidence messages to handlers in any module to
-determine the validity of submitted misbehavior.
-- Support the ability, through governance, to modify slashing penalties of any
-evidence type.
-- Querier implementation to support querying params, evidence types, params, and
-all submitted valid misbehavior.
+* Provide developers with the abstractions and interfaces necessary to define
+  custom evidence messages, message handlers, and methods to slash and penalize
+  accordingly for misbehavior.
+* Support the ability to route evidence messages to handlers in any module to
+  determine the validity of submitted misbehavior.
+* Support the ability, through governance, to modify slashing penalties of any
+  evidence type.
+* Querier implementation to support querying params, evidence types, params, and
+  all submitted valid misbehavior.
 
 ### Types
 
@@ -55,7 +56,8 @@ type Evidence interface {
   Route() string
   Type() string
   String() string
-  ValidateBasic() Error
+  Hash() HexBytes
+  ValidateBasic() error
 
   // The consensus address of the malicious validator at time of infraction
   GetConsensusAddress() ConsAddress
@@ -78,7 +80,7 @@ the `x/evidence` module. It accomplishes this through the `Router` implementatio
 
 ```go
 type Router interface {
-  AddRoute(r string, h Handler)
+  AddRoute(r string, h Handler) Router
   HasRoute(r string) bool
   GetRoute(path string) Handler
   Seal()
@@ -97,7 +99,7 @@ necessary in order for the `Handler` to make the necessary state transitions.
 If no error is returned, the `Evidence` is considered valid.
 
 ```go
-type Handler func(Context, Evidence) Error
+type Handler func(Context, Evidence) error
 ```
 
 ### Submission
@@ -128,7 +130,7 @@ the module's router and invoking the corresponding `Handler` which may include
 slashing and jailing the validator. Upon success, the submitted evidence is persisted.
 
 ```go
-func (k Keeper) SubmitEvidence(ctx Context, evidence Evidence) Error {
+func (k Keeper) SubmitEvidence(ctx Context, evidence Evidence) error {
   handler := keeper.router.GetRoute(evidence.Route())
   if err := handler(ctx, evidence); err != nil {
     return ErrInvalidEvidence(keeper.codespace, err)
@@ -158,22 +160,23 @@ type GenesisState struct {
 
 ### Positive
 
-- Allows the state machine to process misbehavior submitted on-chain and penalize
-validators based on agreed upon slashing parameters.
-- Allows evidence types to be defined and handled by any module. This further allows
-slashing and jailing to be defined by more complex mechanisms.
-- Does not solely rely on Tendermint to submit evidence.
+* Allows the state machine to process misbehavior submitted on-chain and penalize
+  validators based on agreed upon slashing parameters.
+* Allows evidence types to be defined and handled by any module. This further allows
+  slashing and jailing to be defined by more complex mechanisms.
+* Does not solely rely on Tendermint to submit evidence.
 
 ### Negative
 
-- No easy way to introduce new evidence types through governance on a live chain
-due to the inability to introduce the new evidence type's corresponding handler
+* No easy way to introduce new evidence types through governance on a live chain
+  due to the inability to introduce the new evidence type's corresponding handler
 
 ### Neutral
 
-- Should we persist infractions indefinitely? Or should we rather rely on events?
+* Should we persist infractions indefinitely? Or should we rather rely on events?
 
 ## References
 
-- [ICS](https://github.com/cosmos/ics)
-- [IBC Architecture](https://github.com/cosmos/ics/blob/master/ibc/1_IBC_ARCHITECTURE.md)
+* [ICS](https://github.com/cosmos/ics)
+* [IBC Architecture](https://github.com/cosmos/ics/blob/master/ibc/1_IBC_ARCHITECTURE.md)
+* [Tendermint Fork Accountability](https://github.com/tendermint/spec/blob/7b3138e69490f410768d9b1ffc7a17abc23ea397/spec/consensus/fork-accountability.md)

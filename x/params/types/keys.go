@@ -1,9 +1,6 @@
 package types
 
 const (
-	// ModuleName defines the name of the module
+	// ModuleName defines the module name
 	ModuleName = "params"
-
-	// RouterKey defines the routing key for a ParameterChangeProposal
-	RouterKey = "params"
 )

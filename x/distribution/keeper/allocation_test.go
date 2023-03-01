@@ -1,84 +1,138 @@
-package keeper
+package keeper_test
 
 import (
 	"testing"
+	"time"
 
+	"cosmossdk.io/math"
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	abci "github.com/tendermint/tendermint/abci/types"
 
+	storetypes "cosmossdk.io/store/types"
+
+	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/staking"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/cosmos-sdk/x/distribution"
+	"github.com/cosmos/cosmos-sdk/x/distribution/keeper"
+	distrtestutil "github.com/cosmos/cosmos-sdk/x/distribution/testutil"
+	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 func TestAllocateTokensToValidatorWithCommission(t *testing.T) {
-	ctx, _, k, sk, _ := CreateTestInputDefault(t, false, 1000)
-	sh := staking.NewHandler(sk)
+	ctrl := gomock.NewController(t)
+	key := storetypes.NewKVStoreKey(disttypes.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
+	encCfg := moduletestutil.MakeTestEncodingConfig(distribution.AppModuleBasic{})
+	ctx := testCtx.Ctx.WithBlockHeader(cmtproto.Header{Time: time.Now()})
+
+	bankKeeper := distrtestutil.NewMockBankKeeper(ctrl)
+	stakingKeeper := distrtestutil.NewMockStakingKeeper(ctrl)
+	accountKeeper := distrtestutil.NewMockAccountKeeper(ctrl)
+
+	accountKeeper.EXPECT().GetModuleAddress("distribution").Return(distrAcc.GetAddress())
+
+	distrKeeper := keeper.NewKeeper(
+		encCfg.Codec,
+		key,
+		accountKeeper,
+		bankKeeper,
+		stakingKeeper,
+		"fee_collector",
+		authtypes.NewModuleAddress("gov").String(),
+	)
 
 	// create validator with 50% commission
-	commission := staking.NewCommissionRates(sdk.NewDecWithPrec(5, 1), sdk.NewDecWithPrec(5, 1), sdk.NewDec(0))
-	msg := staking.NewMsgCreateValidator(valOpAddr1, valConsPk1,
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(100)), staking.Description{}, commission, sdk.OneInt())
-	require.True(t, sh(ctx, msg).IsOK())
-	val := sk.Validator(ctx, valOpAddr1)
+	val, err := distrtestutil.CreateValidator(valConsPk0, math.NewInt(100))
+	require.NoError(t, err)
+	val.Commission = stakingtypes.NewCommission(sdk.NewDecWithPrec(5, 1), sdk.NewDecWithPrec(5, 1), math.LegacyNewDec(0))
+	stakingKeeper.EXPECT().ValidatorByConsAddr(gomock.Any(), sdk.GetConsAddress(valConsPk0)).Return(val).AnyTimes()
 
 	// allocate tokens
 	tokens := sdk.DecCoins{
-		{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDec(10)},
+		{Denom: sdk.DefaultBondDenom, Amount: math.LegacyNewDec(10)},
 	}
-	k.AllocateTokensToValidator(ctx, val, tokens)
+	distrKeeper.AllocateTokensToValidator(ctx, val, tokens)
 
 	// check commission
 	expected := sdk.DecCoins{
-		{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDec(5)},
+		{Denom: sdk.DefaultBondDenom, Amount: math.LegacyNewDec(5)},
 	}
-	require.Equal(t, expected, k.GetValidatorAccumulatedCommission(ctx, val.GetOperator()))
+	require.Equal(t, expected, distrKeeper.GetValidatorAccumulatedCommission(ctx, val.GetOperator()).Commission)
 
 	// check current rewards
-	require.Equal(t, expected, k.GetValidatorCurrentRewards(ctx, val.GetOperator()).Rewards)
+	require.Equal(t, expected, distrKeeper.GetValidatorCurrentRewards(ctx, val.GetOperator()).Rewards)
 }
 
 func TestAllocateTokensToManyValidators(t *testing.T) {
-	ctx, ak, k, sk, supplyKeeper := CreateTestInputDefault(t, false, 1000)
-	sh := staking.NewHandler(sk)
+	ctrl := gomock.NewController(t)
+	key := storetypes.NewKVStoreKey(disttypes.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
+	encCfg := moduletestutil.MakeTestEncodingConfig(distribution.AppModuleBasic{})
+	ctx := testCtx.Ctx.WithBlockHeader(cmtproto.Header{Time: time.Now()})
+
+	bankKeeper := distrtestutil.NewMockBankKeeper(ctrl)
+	stakingKeeper := distrtestutil.NewMockStakingKeeper(ctrl)
+	accountKeeper := distrtestutil.NewMockAccountKeeper(ctrl)
+
+	feeCollectorAcc := authtypes.NewEmptyModuleAccount("fee_collector")
+	accountKeeper.EXPECT().GetModuleAddress("distribution").Return(distrAcc.GetAddress())
+	accountKeeper.EXPECT().GetModuleAccount(gomock.Any(), "fee_collector").Return(feeCollectorAcc)
+
+	distrKeeper := keeper.NewKeeper(
+		encCfg.Codec,
+		key,
+		accountKeeper,
+		bankKeeper,
+		stakingKeeper,
+		"fee_collector",
+		authtypes.NewModuleAddress("gov").String(),
+	)
+
+	// reset fee pool & set params
+	distrKeeper.SetParams(ctx, disttypes.DefaultParams())
+	distrKeeper.SetFeePool(ctx, disttypes.InitialFeePool())
 
 	// create validator with 50% commission
-	commission := staking.NewCommissionRates(sdk.NewDecWithPrec(5, 1), sdk.NewDecWithPrec(5, 1), sdk.NewDec(0))
-	msg := staking.NewMsgCreateValidator(valOpAddr1, valConsPk1,
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(100)), staking.Description{}, commission, sdk.OneInt())
-	require.True(t, sh(ctx, msg).IsOK())
+	valAddr0 := sdk.ValAddress(valConsAddr0)
+	val0, err := distrtestutil.CreateValidator(valConsPk0, math.NewInt(100))
+	require.NoError(t, err)
+	val0.Commission = stakingtypes.NewCommission(sdk.NewDecWithPrec(5, 1), sdk.NewDecWithPrec(5, 1), math.LegacyNewDec(0))
+	stakingKeeper.EXPECT().ValidatorByConsAddr(gomock.Any(), sdk.GetConsAddress(valConsPk0)).Return(val0).AnyTimes()
 
 	// create second validator with 0% commission
-	commission = staking.NewCommissionRates(sdk.NewDec(0), sdk.NewDec(0), sdk.NewDec(0))
-	msg = staking.NewMsgCreateValidator(valOpAddr2, valConsPk2,
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(100)), staking.Description{}, commission, sdk.OneInt())
-	require.True(t, sh(ctx, msg).IsOK())
+	valAddr1 := sdk.ValAddress(valConsAddr1)
+	val1, err := distrtestutil.CreateValidator(valConsPk1, math.NewInt(100))
+	require.NoError(t, err)
+	val1.Commission = stakingtypes.NewCommission(math.LegacyNewDec(0), math.LegacyNewDec(0), math.LegacyNewDec(0))
+	stakingKeeper.EXPECT().ValidatorByConsAddr(gomock.Any(), sdk.GetConsAddress(valConsPk1)).Return(val1).AnyTimes()
 
 	abciValA := abci.Validator{
-		Address: valConsPk1.Address(),
+		Address: valConsPk0.Address(),
 		Power:   100,
 	}
 	abciValB := abci.Validator{
-		Address: valConsPk2.Address(),
+		Address: valConsPk1.Address(),
 		Power:   100,
 	}
 
 	// assert initial state: zero outstanding rewards, zero community pool, zero commission, zero current rewards
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr1).IsZero())
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr2).IsZero())
-	require.True(t, k.GetFeePool(ctx).CommunityPool.IsZero())
-	require.True(t, k.GetValidatorAccumulatedCommission(ctx, valOpAddr1).IsZero())
-	require.True(t, k.GetValidatorAccumulatedCommission(ctx, valOpAddr2).IsZero())
-	require.True(t, k.GetValidatorCurrentRewards(ctx, valOpAddr1).Rewards.IsZero())
-	require.True(t, k.GetValidatorCurrentRewards(ctx, valOpAddr2).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr0).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr1).Rewards.IsZero())
+	require.True(t, distrKeeper.GetFeePool(ctx).CommunityPool.IsZero())
+	require.True(t, distrKeeper.GetValidatorAccumulatedCommission(ctx, valAddr0).Commission.IsZero())
+	require.True(t, distrKeeper.GetValidatorAccumulatedCommission(ctx, valAddr1).Commission.IsZero())
+	require.True(t, distrKeeper.GetValidatorCurrentRewards(ctx, valAddr0).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorCurrentRewards(ctx, valAddr1).Rewards.IsZero())
 
 	// allocate tokens as if both had voted and second was proposer
 	fees := sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(100)))
-	feeCollector := supplyKeeper.GetModuleAccount(ctx, k.feeCollectorName)
-	require.NotNil(t, feeCollector)
-
-	err := feeCollector.SetCoins(fees)
-	require.NoError(t, err)
-	ak.SetAccount(ctx, feeCollector)
+	bankKeeper.EXPECT().GetAllBalances(gomock.Any(), feeCollectorAcc.GetAddress()).Return(fees)
+	bankKeeper.EXPECT().SendCoinsFromModuleToModule(gomock.Any(), "fee_collector", disttypes.ModuleName, fees)
 
 	votes := []abci.VoteInfo{
 		{
@@ -90,79 +144,105 @@ func TestAllocateTokensToManyValidators(t *testing.T) {
 			SignedLastBlock: true,
 		},
 	}
-	k.AllocateTokens(ctx, 200, 200, valConsAddr2, votes)
+	distrKeeper.AllocateTokens(ctx, 200, votes)
 
 	// 98 outstanding rewards (100 less 2 to community pool)
-	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(465, 1)}}, k.GetValidatorOutstandingRewards(ctx, valOpAddr1))
-	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(515, 1)}}, k.GetValidatorOutstandingRewards(ctx, valOpAddr2))
+	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(490, 1)}}, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr0).Rewards)
+	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(490, 1)}}, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr1).Rewards)
+
 	// 2 community pool coins
-	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDec(2)}}, k.GetFeePool(ctx).CommunityPool)
-	// 50% commission for first proposer, (0.5 * 93%) * 100 / 2 = 23.25
-	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(2325, 2)}}, k.GetValidatorAccumulatedCommission(ctx, valOpAddr1))
+	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: math.LegacyNewDec(2)}}, distrKeeper.GetFeePool(ctx).CommunityPool)
+
+	// 50% commission for first proposer, (0.5 * 98%) * 100 / 2 = 23.25
+	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(2450, 2)}}, distrKeeper.GetValidatorAccumulatedCommission(ctx, valAddr0).Commission)
+
 	// zero commission for second proposer
-	require.True(t, k.GetValidatorAccumulatedCommission(ctx, valOpAddr2).IsZero())
-	// just staking.proportional for first proposer less commission = (0.5 * 93%) * 100 / 2 = 23.25
-	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(2325, 2)}}, k.GetValidatorCurrentRewards(ctx, valOpAddr1).Rewards)
-	// proposer reward + staking.proportional for second proposer = (5 % + 0.5 * (93%)) * 100 = 51.5
-	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(515, 1)}}, k.GetValidatorCurrentRewards(ctx, valOpAddr2).Rewards)
+	require.True(t, distrKeeper.GetValidatorAccumulatedCommission(ctx, valAddr1).Commission.IsZero())
+
+	// just staking.proportional for first proposer less commission = (0.5 * 98%) * 100 / 2 = 24.50
+	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(2450, 2)}}, distrKeeper.GetValidatorCurrentRewards(ctx, valAddr0).Rewards)
+
+	// proposer reward + staking.proportional for second proposer = (0.5 * (98%)) * 100 = 49
+	require.Equal(t, sdk.DecCoins{{Denom: sdk.DefaultBondDenom, Amount: sdk.NewDecWithPrec(490, 1)}}, distrKeeper.GetValidatorCurrentRewards(ctx, valAddr1).Rewards)
 }
 
 func TestAllocateTokensTruncation(t *testing.T) {
-	communityTax := sdk.NewDec(0)
-	ctx, ak, _, k, sk, _, supplyKeeper := CreateTestInputAdvanced(t, false, 1000000, communityTax)
-	sh := staking.NewHandler(sk)
+	ctrl := gomock.NewController(t)
+	key := storetypes.NewKVStoreKey(disttypes.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
+	encCfg := moduletestutil.MakeTestEncodingConfig(distribution.AppModuleBasic{})
+	ctx := testCtx.Ctx.WithBlockHeader(cmtproto.Header{Time: time.Now()})
+
+	bankKeeper := distrtestutil.NewMockBankKeeper(ctrl)
+	stakingKeeper := distrtestutil.NewMockStakingKeeper(ctrl)
+	accountKeeper := distrtestutil.NewMockAccountKeeper(ctrl)
+
+	feeCollectorAcc := authtypes.NewEmptyModuleAccount("fee_collector")
+	accountKeeper.EXPECT().GetModuleAddress("distribution").Return(distrAcc.GetAddress())
+	accountKeeper.EXPECT().GetModuleAccount(gomock.Any(), "fee_collector").Return(feeCollectorAcc)
+
+	distrKeeper := keeper.NewKeeper(
+		encCfg.Codec,
+		key,
+		accountKeeper,
+		bankKeeper,
+		stakingKeeper,
+		"fee_collector",
+		authtypes.NewModuleAddress("gov").String(),
+	)
+
+	// reset fee pool
+	distrKeeper.SetFeePool(ctx, disttypes.InitialFeePool())
+	distrKeeper.SetParams(ctx, disttypes.DefaultParams())
 
 	// create validator with 10% commission
-	commission := staking.NewCommissionRates(sdk.NewDecWithPrec(1, 1), sdk.NewDecWithPrec(1, 1), sdk.NewDec(0))
-	msg := staking.NewMsgCreateValidator(valOpAddr1, valConsPk1,
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(110)), staking.Description{}, commission, sdk.OneInt())
-	require.True(t, sh(ctx, msg).IsOK())
+	valAddr0 := sdk.ValAddress(valConsAddr0)
+	val0, err := distrtestutil.CreateValidator(valConsPk0, math.NewInt(100))
+	require.NoError(t, err)
+	val0.Commission = stakingtypes.NewCommission(sdk.NewDecWithPrec(1, 1), sdk.NewDecWithPrec(1, 1), math.LegacyNewDec(0))
+	stakingKeeper.EXPECT().ValidatorByConsAddr(gomock.Any(), sdk.GetConsAddress(valConsPk0)).Return(val0).AnyTimes()
 
 	// create second validator with 10% commission
-	commission = staking.NewCommissionRates(sdk.NewDecWithPrec(1, 1), sdk.NewDecWithPrec(1, 1), sdk.NewDec(0))
-	msg = staking.NewMsgCreateValidator(valOpAddr2, valConsPk2,
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(100)), staking.Description{}, commission, sdk.OneInt())
-	require.True(t, sh(ctx, msg).IsOK())
+	valAddr1 := sdk.ValAddress(valConsAddr1)
+	val1, err := distrtestutil.CreateValidator(valConsPk1, math.NewInt(100))
+	require.NoError(t, err)
+	val1.Commission = stakingtypes.NewCommission(sdk.NewDecWithPrec(1, 1), sdk.NewDecWithPrec(1, 1), math.LegacyNewDec(0))
+	stakingKeeper.EXPECT().ValidatorByConsAddr(gomock.Any(), sdk.GetConsAddress(valConsPk1)).Return(val1).AnyTimes()
 
 	// create third validator with 10% commission
-	commission = staking.NewCommissionRates(sdk.NewDecWithPrec(1, 1), sdk.NewDecWithPrec(1, 1), sdk.NewDec(0))
-	msg = staking.NewMsgCreateValidator(valOpAddr3, valConsPk3,
-		sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(100)), staking.Description{}, commission, sdk.OneInt())
-	require.True(t, sh(ctx, msg).IsOK())
+	valAddr2 := sdk.ValAddress(valConsAddr2)
+	val2, err := stakingtypes.NewValidator(sdk.ValAddress(valConsAddr2), valConsPk1, stakingtypes.Description{})
+	require.NoError(t, err)
+	val2.Commission = stakingtypes.NewCommission(sdk.NewDecWithPrec(1, 1), sdk.NewDecWithPrec(1, 1), math.LegacyNewDec(0))
+	stakingKeeper.EXPECT().ValidatorByConsAddr(gomock.Any(), sdk.GetConsAddress(valConsPk2)).Return(val2).AnyTimes()
 
 	abciValA := abci.Validator{
-		Address: valConsPk1.Address(),
+		Address: valConsPk0.Address(),
 		Power:   11,
 	}
 	abciValB := abci.Validator{
-		Address: valConsPk2.Address(),
+		Address: valConsPk1.Address(),
 		Power:   10,
 	}
-	abciValС := abci.Validator{
-		Address: valConsPk3.Address(),
+	abciValC := abci.Validator{
+		Address: valConsPk2.Address(),
 		Power:   10,
 	}
 
 	// assert initial state: zero outstanding rewards, zero community pool, zero commission, zero current rewards
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr1).IsZero())
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr2).IsZero())
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr3).IsZero())
-	require.True(t, k.GetFeePool(ctx).CommunityPool.IsZero())
-	require.True(t, k.GetValidatorAccumulatedCommission(ctx, valOpAddr1).IsZero())
-	require.True(t, k.GetValidatorAccumulatedCommission(ctx, valOpAddr2).IsZero())
-	require.True(t, k.GetValidatorCurrentRewards(ctx, valOpAddr1).Rewards.IsZero())
-	require.True(t, k.GetValidatorCurrentRewards(ctx, valOpAddr2).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr0).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr1).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr1).Rewards.IsZero())
+	require.True(t, distrKeeper.GetFeePool(ctx).CommunityPool.IsZero())
+	require.True(t, distrKeeper.GetValidatorAccumulatedCommission(ctx, valAddr0).Commission.IsZero())
+	require.True(t, distrKeeper.GetValidatorAccumulatedCommission(ctx, valAddr1).Commission.IsZero())
+	require.True(t, distrKeeper.GetValidatorCurrentRewards(ctx, valAddr0).Rewards.IsZero())
+	require.True(t, distrKeeper.GetValidatorCurrentRewards(ctx, valAddr1).Rewards.IsZero())
 
 	// allocate tokens as if both had voted and second was proposer
 	fees := sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(634195840)))
-
-	feeCollector := supplyKeeper.GetModuleAccount(ctx, k.feeCollectorName)
-	require.NotNil(t, feeCollector)
-
-	err := feeCollector.SetCoins(fees)
-	require.NoError(t, err)
-
-	ak.SetAccount(ctx, feeCollector)
+	bankKeeper.EXPECT().GetAllBalances(gomock.Any(), feeCollectorAcc.GetAddress()).Return(fees)
+	bankKeeper.EXPECT().SendCoinsFromModuleToModule(gomock.Any(), "fee_collector", disttypes.ModuleName, fees)
 
 	votes := []abci.VoteInfo{
 		{
@@ -174,13 +254,13 @@ func TestAllocateTokensTruncation(t *testing.T) {
 			SignedLastBlock: true,
 		},
 		{
-			Validator:       abciValС,
+			Validator:       abciValC,
 			SignedLastBlock: true,
 		},
 	}
-	k.AllocateTokens(ctx, 31, 31, valConsAddr2, votes)
+	distrKeeper.AllocateTokens(ctx, 31, votes)
 
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr1).IsValid())
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr2).IsValid())
-	require.True(t, k.GetValidatorOutstandingRewards(ctx, valOpAddr3).IsValid())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr0).Rewards.IsValid())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr1).Rewards.IsValid())
+	require.True(t, distrKeeper.GetValidatorOutstandingRewards(ctx, valAddr2).Rewards.IsValid())
 }

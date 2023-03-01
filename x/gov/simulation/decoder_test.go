@@ -1,4 +1,4 @@
-package simulation
+package simulation_test
 
 import (
 	"encoding/binary"
@@ -6,14 +6,18 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tendermint/tendermint/crypto/ed25519"
-	cmn "github.com/tendermint/tendermint/libs/common"
-
-	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/kv"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/gov"
+	"github.com/cosmos/cosmos-sdk/x/gov/simulation"
 	"github.com/cosmos/cosmos-sdk/x/gov/types"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	"github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 )
 
 var (
@@ -21,53 +25,78 @@ var (
 	delAddr1 = sdk.AccAddress(delPk1.Address())
 )
 
-func makeTestCodec() (cdc *codec.Codec) {
-	cdc = codec.New()
-	sdk.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
-	types.RegisterCodec(cdc)
-	return
-}
-
 func TestDecodeStore(t *testing.T) {
-	cdc := makeTestCodec()
+	cdc := moduletestutil.MakeTestEncodingConfig(gov.AppModuleBasic{}).Codec
+	dec := simulation.NewDecodeStore(cdc)
 
 	endTime := time.Now().UTC()
+	content, ok := v1beta1.ContentFromProposalType("test", "test", v1beta1.ProposalTypeText)
+	require.True(t, ok)
+	proposalA, err := v1beta1.NewProposal(content, 1, endTime, endTime.Add(24*time.Hour))
+	require.NoError(t, err)
+	proposalB, err := v1beta1.NewProposal(content, 2, endTime, endTime.Add(24*time.Hour))
+	require.NoError(t, err)
+	proposalC, err := v1.NewProposal([]sdk.Msg{}, 3, endTime, endTime.Add(24*time.Hour), "metadata", "title", "summary", delAddr1, false)
+	require.NoError(t, err)
+	proposalD, err := v1.NewProposal([]sdk.Msg{}, 4, endTime, endTime.Add(24*time.Hour), "metadata", "title", "summary", delAddr1, true)
+	require.NoError(t, err)
 
-	content := types.ContentFromProposalType("test", "test", types.ProposalTypeText)
-	proposal := types.NewProposal(content, 1, endTime, endTime.Add(24*time.Hour))
 	proposalIDBz := make([]byte, 8)
 	binary.LittleEndian.PutUint64(proposalIDBz, 1)
-	deposit := types.NewDeposit(1, delAddr1, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.OneInt())))
-	vote := types.NewVote(1, delAddr1, types.OptionYes)
-
-	kvPairs := cmn.KVPairs{
-		cmn.KVPair{Key: types.ProposalKey(1), Value: cdc.MustMarshalBinaryLengthPrefixed(proposal)},
-		cmn.KVPair{Key: types.InactiveProposalQueueKey(1, endTime), Value: proposalIDBz},
-		cmn.KVPair{Key: types.DepositKey(1, delAddr1), Value: cdc.MustMarshalBinaryLengthPrefixed(deposit)},
-		cmn.KVPair{Key: types.VoteKey(1, delAddr1), Value: cdc.MustMarshalBinaryLengthPrefixed(vote)},
-		cmn.KVPair{Key: []byte{0x99}, Value: []byte{0x99}},
-	}
+	deposit := v1beta1.NewDeposit(1, delAddr1, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, math.OneInt())))
+	vote := v1beta1.NewVote(1, delAddr1, v1beta1.NewNonSplitVoteOption(v1beta1.OptionYes))
 
 	tests := []struct {
 		name        string
+		kvA, kvB    kv.Pair
 		expectedLog string
+		wantPanic   bool
 	}{
-		{"proposals", fmt.Sprintf("%v\n%v", proposal, proposal)},
-		{"proposal IDs", "proposalIDA: 1\nProposalIDB: 1"},
-		{"deposits", fmt.Sprintf("%v\n%v", deposit, deposit)},
-		{"votes", fmt.Sprintf("%v\n%v", vote, vote)},
-		{"other", ""},
+		{
+			"proposals v1beta",
+			kv.Pair{Key: types.ProposalKey(1), Value: cdc.MustMarshal(&proposalA)},
+			kv.Pair{Key: types.ProposalKey(2), Value: cdc.MustMarshal(&proposalB)},
+			fmt.Sprintf("%v\n%v", proposalA, proposalB), false,
+		},
+		{
+			"proposals v1",
+			kv.Pair{Key: types.ProposalKey(3), Value: cdc.MustMarshal(&proposalC)},
+			kv.Pair{Key: types.ProposalKey(4), Value: cdc.MustMarshal(&proposalD)},
+			fmt.Sprintf("%v\n%v", proposalC, proposalD), false,
+		},
+		{
+			"proposal IDs",
+			kv.Pair{Key: types.InactiveProposalQueueKey(1, endTime), Value: proposalIDBz},
+			kv.Pair{Key: types.InactiveProposalQueueKey(1, endTime), Value: proposalIDBz},
+			"proposalIDA: 1\nProposalIDB: 1", false,
+		},
+		{
+			"deposits",
+			kv.Pair{Key: types.DepositKey(1, delAddr1), Value: cdc.MustMarshal(&deposit)},
+			kv.Pair{Key: types.DepositKey(1, delAddr1), Value: cdc.MustMarshal(&deposit)},
+			fmt.Sprintf("%v\n%v", deposit, deposit), false,
+		},
+		{
+			"votes",
+			kv.Pair{Key: types.VoteKey(1, delAddr1), Value: cdc.MustMarshal(&vote)},
+			kv.Pair{Key: types.VoteKey(1, delAddr1), Value: cdc.MustMarshal(&vote)},
+			fmt.Sprintf("%v\n%v", vote, vote), false,
+		},
+		{
+			"other",
+			kv.Pair{Key: []byte{0x99}, Value: []byte{0x99}},
+			kv.Pair{Key: []byte{0x99}, Value: []byte{0x99}},
+			"", true,
+		},
 	}
 
-	for i, tt := range tests {
-		i, tt := i, tt
+	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			switch i {
-			case len(tests) - 1:
-				require.Panics(t, func() { DecodeStore(cdc, kvPairs[i], kvPairs[i]) }, tt.name)
-			default:
-				require.Equal(t, tt.expectedLog, DecodeStore(cdc, kvPairs[i], kvPairs[i]), tt.name)
+			if tt.wantPanic {
+				require.Panics(t, func() { dec(tt.kvA, tt.kvB) }, tt.name)
+			} else {
+				require.Equal(t, tt.expectedLog, dec(tt.kvA, tt.kvB), tt.name)
 			}
 		})
 	}

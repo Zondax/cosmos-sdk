@@ -2,16 +2,15 @@ package flags
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 
+	cmtcli "github.com/cometbft/cometbft/libs/cli"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	"github.com/spf13/pflag"
 
-	tmcli "github.com/tendermint/tendermint/libs/cli"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
-// nolint
 const (
 	// DefaultGasAdjustment is applied to gas estimates to avoid tx execution
 	// failures due to state changes that might occur between the tx simulation
@@ -20,9 +19,9 @@ const (
 	DefaultGasLimit      = 200000
 	GasFlagAuto          = "auto"
 
-	// BroadcastBlock defines a tx broadcasting mode where the client waits for
-	// the tx to be committed in a block.
-	BroadcastBlock = "block"
+	// DefaultKeyringBackend
+	DefaultKeyringBackend = keyring.BackendOS
+
 	// BroadcastSync defines a tx broadcasting mode where the client waits for
 	// a CheckTx execution response only.
 	BroadcastSync = "sync"
@@ -30,103 +29,134 @@ const (
 	// immediately.
 	BroadcastAsync = "async"
 
-	FlagHome               = tmcli.HomeFlag
-	FlagUseLedger          = "ledger"
-	FlagChainID            = "chain-id"
-	FlagNode               = "node"
-	FlagHeight             = "height"
-	FlagGasAdjustment      = "gas-adjustment"
-	FlagTrustNode          = "trust-node"
-	FlagFrom               = "from"
-	FlagName               = "name"
-	FlagAccountNumber      = "account-number"
-	FlagSequence           = "sequence"
-	FlagMemo               = "memo"
-	FlagFees               = "fees"
-	FlagGasPrices          = "gas-prices"
-	FlagBroadcastMode      = "broadcast-mode"
-	FlagDryRun             = "dry-run"
-	FlagGenerateOnly       = "generate-only"
-	FlagIndentResponse     = "indent"
-	FlagListenAddr         = "laddr"
-	FlagMaxOpenConnections = "max-open"
-	FlagRPCReadTimeout     = "read-timeout"
-	FlagRPCWriteTimeout    = "write-timeout"
-	FlagOutputDocument     = "output-document" // inspired by wget -O
-	FlagSkipConfirmation   = "yes"
+	// SignModeDirect is the value of the --sign-mode flag for SIGN_MODE_DIRECT
+	SignModeDirect = "direct"
+	// SignModeLegacyAminoJSON is the value of the --sign-mode flag for SIGN_MODE_LEGACY_AMINO_JSON
+	SignModeLegacyAminoJSON = "amino-json"
+	// SignModeDirectAux is the value of the --sign-mode flag for SIGN_MODE_DIRECT_AUX
+	SignModeDirectAux = "direct-aux"
+	// SignModeTextual is the value of the --sign-mode flag for SIGN_MODE_TEXTUAL.
+	// Choosing this flag will result in an error for now, as Textual should be
+	// used only for TESTING purposes for now.
+	SignModeTextual = "textual"
+	// SignModeEIP191 is the value of the --sign-mode flag for SIGN_MODE_EIP_191
+	SignModeEIP191 = "eip-191"
+)
+
+// List of CLI flags
+const (
+	FlagHome             = cmtcli.HomeFlag
+	FlagKeyringDir       = "keyring-dir"
+	FlagUseLedger        = "ledger"
+	FlagChainID          = "chain-id"
+	FlagNode             = "node"
+	FlagGRPC             = "grpc-addr"
+	FlagGRPCInsecure     = "grpc-insecure"
+	FlagHeight           = "height"
+	FlagGasAdjustment    = "gas-adjustment"
+	FlagFrom             = "from"
+	FlagName             = "name"
+	FlagAccountNumber    = "account-number"
+	FlagSequence         = "sequence"
+	FlagNote             = "note"
+	FlagFees             = "fees"
+	FlagGas              = "gas"
+	FlagGasPrices        = "gas-prices"
+	FlagBroadcastMode    = "broadcast-mode"
+	FlagDryRun           = "dry-run"
+	FlagGenerateOnly     = "generate-only"
+	FlagOffline          = "offline"
+	FlagOutputDocument   = "output-document" // inspired by wget -O
+	FlagSkipConfirmation = "yes"
+	FlagProve            = "prove"
+	FlagKeyringBackend   = "keyring-backend"
+	FlagPage             = "page"
+	FlagLimit            = "limit"
+	FlagSignMode         = "sign-mode"
+	FlagPageKey          = "page-key"
+	FlagOffset           = "offset"
+	FlagCountTotal       = "count-total"
+	FlagTimeoutHeight    = "timeout-height"
+	FlagKeyType          = "key-type"
+	FlagFeePayer         = "fee-payer"
+	FlagFeeGranter       = "fee-granter"
+	FlagReverse          = "reverse"
+	FlagTip              = "tip"
+	FlagAux              = "aux"
+	FlagInitHeight       = "initial-height"
+	// FlagOutput is the flag to set the output format.
+	// This differs from FlagOutputDocument that is used to set the output file.
+	FlagOutput = cmtcli.OutputFlag
+
+	// Logging flags
+	FlagLogLevel  = "log_level"
+	FlagLogFormat = "log_format"
 )
 
 // LineBreak can be included in a command list to provide a blank line
 // to help with readability
-var (
-	LineBreak  = &cobra.Command{Run: func(*cobra.Command, []string) {}}
-	GasFlagVar = GasSetting{Gas: DefaultGasLimit}
-)
+var LineBreak = &cobra.Command{Run: func(*cobra.Command, []string) {}}
 
-// GetCommands adds common flags to query commands
-func GetCommands(cmds ...*cobra.Command) []*cobra.Command {
-	for _, c := range cmds {
-		c.Flags().Bool(FlagIndentResponse, false, "Add indent to JSON response")
-		c.Flags().Bool(FlagTrustNode, false, "Trust connected full node (don't verify proofs for responses)")
-		c.Flags().Bool(FlagUseLedger, false, "Use a connected Ledger device")
-		c.Flags().String(FlagNode, "tcp://localhost:26657", "<host>:<port> to Tendermint RPC interface for this chain")
-		c.Flags().Int64(FlagHeight, 0, "Use a specific height to query state at (this can error if the node is pruning state)")
+// AddQueryFlagsToCmd adds common flags to a module query command.
+func AddQueryFlagsToCmd(cmd *cobra.Command) {
+	cmd.Flags().String(FlagNode, "tcp://localhost:26657", "<host>:<port> to CometBFT RPC interface for this chain")
+	cmd.Flags().String(FlagGRPC, "", "the gRPC endpoint to use for this chain")
+	cmd.Flags().Bool(FlagGRPCInsecure, false, "allow gRPC over insecure channels, if not the server must use TLS")
+	cmd.Flags().Int64(FlagHeight, 0, "Use a specific height to query state at (this can error if the node is pruning state)")
+	cmd.Flags().StringP(FlagOutput, "o", "text", "Output format (text|json)")
 
-		viper.BindPFlag(FlagTrustNode, c.Flags().Lookup(FlagTrustNode))
-		viper.BindPFlag(FlagUseLedger, c.Flags().Lookup(FlagUseLedger))
-		viper.BindPFlag(FlagNode, c.Flags().Lookup(FlagNode))
-
-		c.MarkFlagRequired(FlagChainID)
-	}
-	return cmds
+	// some base commands does not require chainID e.g `simd testnet` while subcommands do
+	// hence the flag should not be required for those commands
+	_ = cmd.MarkFlagRequired(FlagChainID)
 }
 
-// PostCommands adds common flags for commands to post tx
-func PostCommands(cmds ...*cobra.Command) []*cobra.Command {
-	for _, c := range cmds {
-		c.Flags().Bool(FlagIndentResponse, false, "Add indent to JSON response")
-		c.Flags().String(FlagFrom, "", "Name or address of private key with which to sign")
-		c.Flags().Uint64P(FlagAccountNumber, "a", 0, "The account number of the signing account (offline mode only)")
-		c.Flags().Uint64P(FlagSequence, "s", 0, "The sequence number of the signing account (offline mode only)")
-		c.Flags().String(FlagMemo, "", "Memo to send along with transaction")
-		c.Flags().String(FlagFees, "", "Fees to pay along with transaction; eg: 10uatom")
-		c.Flags().String(FlagGasPrices, "", "Gas prices to determine the transaction fee (e.g. 10uatom)")
-		c.Flags().String(FlagNode, "tcp://localhost:26657", "<host>:<port> to tendermint rpc interface for this chain")
-		c.Flags().Bool(FlagUseLedger, false, "Use a connected Ledger device")
-		c.Flags().Float64(FlagGasAdjustment, DefaultGasAdjustment, "adjustment factor to be multiplied against the estimate returned by the tx simulation; if the gas limit is set manually this flag is ignored ")
-		c.Flags().StringP(FlagBroadcastMode, "b", BroadcastSync, "Transaction broadcasting mode (sync|async|block)")
-		c.Flags().Bool(FlagTrustNode, true, "Trust connected full node (don't verify proofs for responses)")
-		c.Flags().Bool(FlagDryRun, false, "ignore the --gas flag and perform a simulation of a transaction, but don't broadcast it")
-		c.Flags().Bool(FlagGenerateOnly, false, "Build an unsigned transaction and write it to STDOUT (when enabled, the local Keybase is not accessible and the node operates offline)")
-		c.Flags().BoolP(FlagSkipConfirmation, "y", false, "Skip tx broadcasting prompt confirmation")
+// AddTxFlagsToCmd adds common flags to a module tx command.
+func AddTxFlagsToCmd(cmd *cobra.Command) {
+	f := cmd.Flags()
+	f.StringP(FlagOutput, "o", "json", "Output format (text|json)")
+	f.String(FlagFrom, "", "Name or address of private key with which to sign")
+	f.Uint64P(FlagAccountNumber, "a", 0, "The account number of the signing account (offline mode only)")
+	f.Uint64P(FlagSequence, "s", 0, "The sequence number of the signing account (offline mode only)")
+	f.String(FlagNote, "", "Note to add a description to the transaction (previously --memo)")
+	f.String(FlagFees, "", "Fees to pay along with transaction; eg: 10uatom")
+	f.String(FlagGasPrices, "", "Gas prices in decimal format to determine the transaction fee (e.g. 0.1uatom)")
+	f.String(FlagNode, "tcp://localhost:26657", "<host>:<port> to CometBFT rpc interface for this chain")
+	f.Bool(FlagUseLedger, false, "Use a connected Ledger device")
+	f.Float64(FlagGasAdjustment, DefaultGasAdjustment, "adjustment factor to be multiplied against the estimate returned by the tx simulation; if the gas limit is set manually this flag is ignored ")
+	f.StringP(FlagBroadcastMode, "b", BroadcastSync, "Transaction broadcasting mode (sync|async)")
+	f.Bool(FlagDryRun, false, "ignore the --gas flag and perform a simulation of a transaction, but don't broadcast it (when enabled, the local Keybase is not accessible)")
+	f.Bool(FlagGenerateOnly, false, "Build an unsigned transaction and write it to STDOUT (when enabled, the local Keybase only accessed when providing a key name)")
+	f.Bool(FlagOffline, false, "Offline mode (does not allow any online functionality)")
+	f.BoolP(FlagSkipConfirmation, "y", false, "Skip tx broadcasting prompt confirmation")
+	f.String(FlagSignMode, "", "Choose sign mode (direct|amino-json|direct-aux), this is an advanced feature")
+	f.Uint64(FlagTimeoutHeight, 0, "Set a block timeout height to prevent the tx from being committed past a certain height")
+	f.String(FlagFeePayer, "", "Fee payer pays fees for the transaction instead of deducting from the signer")
+	f.String(FlagFeeGranter, "", "Fee granter grants fees for the transaction")
+	f.String(FlagTip, "", "Tip is the amount that is going to be transferred to the fee payer on the target chain. This flag is only valid when used with --aux, and is ignored if the target chain didn't enable the TipDecorator")
+	f.Bool(FlagAux, false, "Generate aux signer data instead of sending a tx")
+	f.String(FlagChainID, "", "The network chain ID")
+	// --gas can accept integers and "auto"
+	f.String(FlagGas, "", fmt.Sprintf("gas limit to set per-transaction; set to %q to calculate sufficient gas automatically. Note: %q option doesn't always report accurate results. Set a valid coin value to adjust the result. Can be used instead of %q. (default %d)",
+		GasFlagAuto, GasFlagAuto, FlagFees, DefaultGasLimit))
 
-		// --gas can accept integers and "simulate"
-		c.Flags().Var(&GasFlagVar, "gas", fmt.Sprintf(
-			"gas limit to set per-transaction; set to %q to calculate required gas automatically (default %d)",
-			GasFlagAuto, DefaultGasLimit,
-		))
-
-		viper.BindPFlag(FlagTrustNode, c.Flags().Lookup(FlagTrustNode))
-		viper.BindPFlag(FlagUseLedger, c.Flags().Lookup(FlagUseLedger))
-		viper.BindPFlag(FlagNode, c.Flags().Lookup(FlagNode))
-
-		c.MarkFlagRequired(FlagChainID)
-	}
-	return cmds
+	AddKeyringFlags(f)
 }
 
-// RegisterRestServerFlags registers the flags required for rest server
-func RegisterRestServerFlags(cmd *cobra.Command) *cobra.Command {
-	cmd = GetCommands(cmd)[0]
-	cmd.Flags().String(FlagListenAddr, "tcp://localhost:1317", "The address for the server to listen on")
-	cmd.Flags().Uint(FlagMaxOpenConnections, 1000, "The number of maximum open connections")
-	cmd.Flags().Uint(FlagRPCReadTimeout, 10, "The RPC read timeout (in seconds)")
-	cmd.Flags().Uint(FlagRPCWriteTimeout, 10, "The RPC write timeout (in seconds)")
-
-	return cmd
+// AddKeyringFlags sets common keyring flags
+func AddKeyringFlags(flags *pflag.FlagSet) {
+	flags.String(FlagKeyringDir, "", "The client Keyring directory; if omitted, the default 'home' directory will be used")
+	flags.String(FlagKeyringBackend, DefaultKeyringBackend, "Select keyring's backend (os|file|kwallet|pass|test|memory)")
 }
 
-// Gas flag parsing functions
+// AddPaginationFlagsToCmd adds common pagination flags to cmd
+func AddPaginationFlagsToCmd(cmd *cobra.Command, query string) {
+	cmd.Flags().Uint64(FlagPage, 1, fmt.Sprintf("pagination page of %s to query for. This sets offset to a multiple of limit", query))
+	cmd.Flags().String(FlagPageKey, "", fmt.Sprintf("pagination page-key of %s to query for", query))
+	cmd.Flags().Uint64(FlagOffset, 0, fmt.Sprintf("pagination offset of %s to query for", query))
+	cmd.Flags().Uint64(FlagLimit, 100, fmt.Sprintf("pagination limit of %s to query for", query))
+	cmd.Flags().Bool(FlagCountTotal, false, fmt.Sprintf("count total number of records in %s to query for", query))
+	cmd.Flags().Bool(FlagReverse, false, "results are sorted in descending order")
+}
 
 // GasSetting encapsulates the possible values passed through the --gas flag.
 type GasSetting struct {
@@ -134,67 +164,32 @@ type GasSetting struct {
 	Gas      uint64
 }
 
-// Type returns the flag's value type.
-func (v *GasSetting) Type() string { return "string" }
-
-// Set parses and sets the value of the --gas flag.
-func (v *GasSetting) Set(s string) (err error) {
-	v.Simulate, v.Gas, err = ParseGas(s)
-	return
-}
-
 func (v *GasSetting) String() string {
 	if v.Simulate {
 		return GasFlagAuto
 	}
+
 	return strconv.FormatUint(v.Gas, 10)
 }
 
-// ParseGas parses the value of the gas option.
-func ParseGas(gasStr string) (simulateAndExecute bool, gas uint64, err error) {
+// ParseGasSetting parses a string gas value. The value may either be 'auto',
+// which indicates a transaction should be executed in simulate mode to
+// automatically find a sufficient gas value, or a string integer. It returns an
+// error if a string integer is provided which cannot be parsed.
+func ParseGasSetting(gasStr string) (GasSetting, error) {
 	switch gasStr {
 	case "":
-		gas = DefaultGasLimit
+		return GasSetting{false, DefaultGasLimit}, nil
+
 	case GasFlagAuto:
-		simulateAndExecute = true
+		return GasSetting{true, 0}, nil
+
 	default:
-		gas, err = strconv.ParseUint(gasStr, 10, 64)
+		gas, err := strconv.ParseUint(gasStr, 10, 64)
 		if err != nil {
-			err = fmt.Errorf("gas must be either integer or %q", GasFlagAuto)
-			return
+			return GasSetting{}, fmt.Errorf("gas must be either integer or %s", GasFlagAuto)
 		}
+
+		return GasSetting{false, gas}, nil
 	}
-	return
-}
-
-// NewCompletionCmd builds a cobra.Command that generate bash completion
-// scripts for the given root command. If hidden is true, the command
-// will not show up in the root command's list of available commands.
-func NewCompletionCmd(rootCmd *cobra.Command, hidden bool) *cobra.Command {
-	flagZsh := "zsh"
-	cmd := &cobra.Command{
-		Use:   "completion",
-		Short: "Generate Bash/Zsh completion script to STDOUT",
-		Long: `To load completion script run
-
-. <(completion_script)
-
-To configure your bash shell to load completions for each session add to your bashrc
-
-# ~/.bashrc or ~/.profile
-. <(completion_script)
-`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if viper.GetBool(flagZsh) {
-				return rootCmd.GenZshCompletion(os.Stdout)
-			}
-			return rootCmd.GenBashCompletion(os.Stdout)
-		},
-		Hidden: hidden,
-		Args:   cobra.NoArgs,
-	}
-
-	cmd.Flags().Bool(flagZsh, false, "Generate Zsh completion script")
-
-	return cmd
 }

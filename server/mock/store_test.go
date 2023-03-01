@@ -3,19 +3,19 @@ package mock
 import (
 	"testing"
 
+	dbm "github.com/cosmos/cosmos-db"
 	"github.com/stretchr/testify/require"
 
-	dbm "github.com/tendermint/tm-db"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	storetypes "cosmossdk.io/store/types"
 )
 
 func TestStore(t *testing.T) {
 	db := dbm.NewMemDB()
+
 	cms := NewCommitMultiStore()
 
-	key := sdk.NewKVStoreKey("test")
-	cms.MountStoreWithDB(key, sdk.StoreTypeIAVL, db)
+	key := storetypes.NewKVStoreKey("test")
+	cms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, db)
 	err := cms.LoadLatestVersion()
 	require.Nil(t, err)
 
@@ -30,4 +30,6 @@ func TestStore(t *testing.T) {
 	require.Equal(t, v, store.Get(k))
 	store.Delete(k)
 	require.False(t, store.Has(k))
+	require.Panics(t, func() { store.Set([]byte(""), v) }, "setting an empty key should panic")
+	require.Panics(t, func() { store.Set(nil, v) }, "setting a nil key should panic")
 }

@@ -2,111 +2,130 @@ package simapp
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/libs/log"
-	dbm "github.com/tendermint/tm-db"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	"github.com/stretchr/testify/require"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/server"
+	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
+	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	"github.com/cosmos/cosmos-sdk/x/simulation"
+	simcli "github.com/cosmos/cosmos-sdk/x/simulation/client/cli"
 )
 
 // Profile with:
-// /usr/local/go/bin/go test -benchmem -run=^$ github.com/cosmos/cosmos-sdk/simapp -bench ^BenchmarkFullAppSimulation$ -Commit=true -cpuprofile cpu.out
+// /usr/local/go/bin/go test -benchmem -run=^$ cosmossdk.io/simapp -bench ^BenchmarkFullAppSimulation$ -Commit=true -cpuprofile cpu.out
 func BenchmarkFullAppSimulation(b *testing.B) {
-	logger := log.NewNopLogger()
-	config := NewConfigFromFlags()
+	b.ReportAllocs()
 
-	var db dbm.DB
-	dir, _ := ioutil.TempDir("", "goleveldb-app-sim")
-	db, _ = sdk.NewLevelDB("Simulation", dir)
-	defer func() {
-		db.Close()
-		os.RemoveAll(dir)
-	}()
+	config := simcli.NewConfigFromFlags()
+	config.ChainID = SimAppChainID
 
-	app := NewSimApp(logger, db, nil, true, FlagPeriodValue, interBlockCacheOpt())
-
-	// Run randomized simulation
-	// TODO: parameterize numbers, save for a later PR
-	_, simParams, simErr := simulation.SimulateFromSeed(
-		b, os.Stdout, app.BaseApp, AppStateFn(app.Codec(), app.sm),
-		testAndRunTxs(app, config), app.ModuleAccountAddrs(), config,
-	)
-
-	// export state and params before the simulation error is checked
-	if config.ExportStatePath != "" {
-		if err := ExportStateToJSON(app, config.ExportStatePath); err != nil {
-			fmt.Println(err)
-			b.Fail()
-		}
+	db, dir, logger, skip, err := simtestutil.SetupSimulation(config, "goleveldb-app-sim", "Simulation", simcli.FlagVerboseValue, simcli.FlagEnabledValue)
+	if err != nil {
+		b.Fatalf("simulation setup failed: %s", err.Error())
 	}
 
-	if config.ExportParamsPath != "" {
-		if err := ExportParamsToJSON(simParams, config.ExportParamsPath); err != nil {
-			fmt.Println(err)
-			b.Fail()
-		}
+	if skip {
+		b.Skip("skipping benchmark application simulation")
+	}
+
+	defer func() {
+		require.NoError(b, db.Close())
+		require.NoError(b, os.RemoveAll(dir))
+	}()
+
+	appOptions := make(simtestutil.AppOptionsMap, 0)
+	appOptions[flags.FlagHome] = DefaultNodeHome
+	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
+
+	app := NewSimApp(logger, db, nil, true, appOptions, interBlockCacheOpt())
+
+	// run randomized simulation
+	_, simParams, simErr := simulation.SimulateFromSeed(
+		b,
+		os.Stdout,
+		app.BaseApp,
+		simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
+		simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
+		simtestutil.SimulationOperations(app, app.AppCodec(), config),
+		BlockedAddresses(),
+		config,
+		app.AppCodec(),
+	)
+
+	// export state and simParams before the simulation error is checked
+	if err = simtestutil.CheckExportSimulation(app, config, simParams); err != nil {
+		b.Fatal(err)
 	}
 
 	if simErr != nil {
-		fmt.Println(simErr)
-		b.FailNow()
+		b.Fatal(simErr)
 	}
 
 	if config.Commit {
-		fmt.Println("\nGoLevelDB Stats")
-		fmt.Println(db.Stats()["leveldb.stats"])
-		fmt.Println("GoLevelDB cached block size", db.Stats()["leveldb.cachedblock"])
+		simtestutil.PrintStats(db)
 	}
 }
 
 func BenchmarkInvariants(b *testing.B) {
-	logger := log.NewNopLogger()
+	b.ReportAllocs()
 
-	config := NewConfigFromFlags()
-	config.AllInvariants = false
+	config := simcli.NewConfigFromFlags()
+	config.ChainID = SimAppChainID
 
-	dir, _ := ioutil.TempDir("", "goleveldb-app-invariant-bench")
-	db, _ := sdk.NewLevelDB("simulation", dir)
-
-	defer func() {
-		db.Close()
-		os.RemoveAll(dir)
-	}()
-
-	app := NewSimApp(logger, db, nil, true, FlagPeriodValue, interBlockCacheOpt())
-
-	// 2. Run parameterized simulation (w/o invariants)
-	_, simParams, simErr := simulation.SimulateFromSeed(
-		b, ioutil.Discard, app.BaseApp, AppStateFn(app.Codec(), app.sm),
-		testAndRunTxs(app, config), app.ModuleAccountAddrs(), config,
-	)
-
-	// export state and params before the simulation error is checked
-	if config.ExportStatePath != "" {
-		if err := ExportStateToJSON(app, config.ExportStatePath); err != nil {
-			fmt.Println(err)
-			b.Fail()
-		}
+	db, dir, logger, skip, err := simtestutil.SetupSimulation(config, "leveldb-app-invariant-bench", "Simulation", simcli.FlagVerboseValue, simcli.FlagEnabledValue)
+	if err != nil {
+		b.Fatalf("simulation setup failed: %s", err.Error())
 	}
 
-	if config.ExportParamsPath != "" {
-		if err := ExportParamsToJSON(simParams, config.ExportParamsPath); err != nil {
-			fmt.Println(err)
-			b.Fail()
-		}
+	if skip {
+		b.Skip("skipping benchmark application simulation")
+	}
+
+	config.AllInvariants = false
+
+	defer func() {
+		require.NoError(b, db.Close())
+		require.NoError(b, os.RemoveAll(dir))
+	}()
+
+	appOptions := make(simtestutil.AppOptionsMap, 0)
+	appOptions[flags.FlagHome] = DefaultNodeHome
+	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
+
+	app := NewSimApp(logger, db, nil, true, appOptions, interBlockCacheOpt())
+
+	// run randomized simulation
+	_, simParams, simErr := simulation.SimulateFromSeed(
+		b,
+		os.Stdout,
+		app.BaseApp,
+		simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
+		simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
+		simtestutil.SimulationOperations(app, app.AppCodec(), config),
+		BlockedAddresses(),
+		config,
+		app.AppCodec(),
+	)
+
+	// export state and simParams before the simulation error is checked
+	if err = simtestutil.CheckExportSimulation(app, config, simParams); err != nil {
+		b.Fatal(err)
 	}
 
 	if simErr != nil {
-		fmt.Println(simErr)
-		b.FailNow()
+		b.Fatal(simErr)
 	}
 
-	ctx := app.NewContext(true, abci.Header{Height: app.LastBlockHeight() + 1})
+	if config.Commit {
+		simtestutil.PrintStats(db)
+	}
+
+	ctx := app.NewContext(true, cmtproto.Header{Height: app.LastBlockHeight() + 1})
 
 	// 3. Benchmark each invariant separately
 	//
@@ -116,8 +135,10 @@ func BenchmarkInvariants(b *testing.B) {
 		cr := cr
 		b.Run(fmt.Sprintf("%s/%s", cr.ModuleName, cr.Route), func(b *testing.B) {
 			if res, stop := cr.Invar(ctx); stop {
-				fmt.Printf("broken invariant at block %d of %d\n%s", ctx.BlockHeight()-1, config.NumBlocks, res)
-				b.FailNow()
+				b.Fatalf(
+					"broken invariant at block %d of %d\n%s",
+					ctx.BlockHeight()-1, config.NumBlocks, res,
+				)
 			}
 		})
 	}

@@ -5,31 +5,23 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pkg/errors"
+	"cosmossdk.io/errors"
 )
 
 // ----------------------------------------------------------------------------
 // Decimal Coin
 
-// Coins which can have additional decimal points
-type DecCoin struct {
-	Denom  string `json:"denom"`
-	Amount Dec    `json:"amount"`
-}
-
+// NewDecCoin creates a new DecCoin instance from an Int.
 func NewDecCoin(denom string, amount Int) DecCoin {
-	mustValidateDenom(denom)
-
-	if amount.IsNegative() {
-		panic(fmt.Sprintf("negative coin amount: %v\n", amount))
-	}
+	coin := NewCoin(denom, amount)
 
 	return DecCoin{
-		Denom:  denom,
-		Amount: amount.ToDec(),
+		Denom:  coin.Denom,
+		Amount: NewDecFromInt(coin.Amount),
 	}
 }
 
+// NewDecCoinFromDec creates a new DecCoin instance from a Dec.
 func NewDecCoinFromDec(denom string, amount Dec) DecCoin {
 	mustValidateDenom(denom)
 
@@ -43,17 +35,15 @@ func NewDecCoinFromDec(denom string, amount Dec) DecCoin {
 	}
 }
 
+// NewDecCoinFromCoin creates a new DecCoin from a Coin.
 func NewDecCoinFromCoin(coin Coin) DecCoin {
-	if coin.Amount.IsNegative() {
-		panic(fmt.Sprintf("negative decimal coin amount: %v\n", coin.Amount))
-	}
-	if strings.ToLower(coin.Denom) != coin.Denom {
-		panic(fmt.Sprintf("denom cannot contain upper case characters: %s\n", coin.Denom))
+	if err := coin.Validate(); err != nil {
+		panic(err)
 	}
 
 	return DecCoin{
 		Denom:  coin.Denom,
-		Amount: coin.Amount.ToDec(),
+		Amount: NewDecFromInt(coin.Amount),
 	}
 }
 
@@ -89,15 +79,12 @@ func (coin DecCoin) IsLT(other DecCoin) bool {
 }
 
 // IsEqual returns true if the two sets of Coins have the same value.
+// Deprecated: Use DecCoin.Equal instead.
 func (coin DecCoin) IsEqual(other DecCoin) bool {
-	if coin.Denom != other.Denom {
-		panic(fmt.Sprintf("invalid coin denominations; %s, %s", coin.Denom, other.Denom))
-	}
-
-	return coin.Amount.Equal(other.Amount)
+	return coin.Equal(other)
 }
 
-// Adds amounts of two coins with same denom
+// Add adds amounts of two decimal coins with same denom.
 func (coin DecCoin) Add(coinB DecCoin) DecCoin {
 	if coin.Denom != coinB.Denom {
 		panic(fmt.Sprintf("coin denom different: %v %v\n", coin.Denom, coinB.Denom))
@@ -105,20 +92,24 @@ func (coin DecCoin) Add(coinB DecCoin) DecCoin {
 	return DecCoin{coin.Denom, coin.Amount.Add(coinB.Amount)}
 }
 
-// Subtracts amounts of two coins with same denom
+// Sub subtracts amounts of two decimal coins with same denom.
 func (coin DecCoin) Sub(coinB DecCoin) DecCoin {
 	if coin.Denom != coinB.Denom {
 		panic(fmt.Sprintf("coin denom different: %v %v\n", coin.Denom, coinB.Denom))
 	}
-	return DecCoin{coin.Denom, coin.Amount.Sub(coinB.Amount)}
+	res := DecCoin{coin.Denom, coin.Amount.Sub(coinB.Amount)}
+	if res.IsNegative() {
+		panic("negative decimal coin amount")
+	}
+	return res
 }
 
 // TruncateDecimal returns a Coin with a truncated decimal and a DecCoin for the
 // change. Note, the change may be zero.
 func (coin DecCoin) TruncateDecimal() (Coin, DecCoin) {
 	truncated := coin.Amount.TruncateInt()
-	change := coin.Amount.Sub(truncated.ToDec())
-	return NewCoin(coin.Denom, truncated), DecCoin{coin.Denom, change}
+	change := coin.Amount.Sub(NewDecFromInt(truncated))
+	return NewCoin(coin.Denom, truncated), NewDecCoinFromDec(coin.Denom, change)
 }
 
 // IsPositive returns true if coin amount is positive.
@@ -132,7 +123,7 @@ func (coin DecCoin) IsPositive() bool {
 //
 // TODO: Remove once unsigned integers are used.
 func (coin DecCoin) IsNegative() bool {
-	return coin.Amount.Sign() == -1
+	return coin.Amount.IsNegative()
 }
 
 // String implements the Stringer interface for DecCoin. It returns a
@@ -141,18 +132,64 @@ func (coin DecCoin) String() string {
 	return fmt.Sprintf("%v%v", coin.Amount, coin.Denom)
 }
 
+// Validate returns an error if the DecCoin has a negative amount or if the denom is invalid.
+func (coin DecCoin) Validate() error {
+	if err := ValidateDenom(coin.Denom); err != nil {
+		return err
+	}
+	if coin.IsNegative() {
+		return fmt.Errorf("decimal coin %s amount cannot be negative", coin)
+	}
+	return nil
+}
+
+// IsValid returns true if the DecCoin has a non-negative amount and the denom is valid.
+func (coin DecCoin) IsValid() bool {
+	return coin.Validate() == nil
+}
+
 // ----------------------------------------------------------------------------
 // Decimal Coins
 
-// coins with decimal
+// DecCoins defines a slice of coins with decimal values
 type DecCoins []DecCoin
 
-func NewDecCoins(coins Coins) DecCoins {
-	dcs := make(DecCoins, len(coins))
-	for i, coin := range coins {
-		dcs[i] = NewDecCoinFromCoin(coin)
+// NewDecCoins constructs a new coin set with with decimal values
+// from DecCoins. The provided coins will be sanitized by removing
+// zero coins and sorting the coin set. A panic will occur if the coin set is not valid.
+func NewDecCoins(decCoins ...DecCoin) DecCoins {
+	newDecCoins := sanitizeDecCoins(decCoins)
+	if err := newDecCoins.Validate(); err != nil {
+		panic(fmt.Errorf("invalid coin set %s: %w", newDecCoins, err))
 	}
-	return dcs
+
+	return newDecCoins
+}
+
+func sanitizeDecCoins(decCoins []DecCoin) DecCoins {
+	// remove zeroes
+	newDecCoins := removeZeroDecCoins(decCoins)
+	if len(newDecCoins) == 0 {
+		return DecCoins{}
+	}
+
+	return newDecCoins.Sort()
+}
+
+// NewDecCoinsFromCoins constructs a new coin set with decimal values
+// from regular Coins.
+func NewDecCoinsFromCoins(coins ...Coin) DecCoins {
+	if len(coins) == 0 {
+		return DecCoins{}
+	}
+
+	decCoins := make([]DecCoin, 0, len(coins))
+	newCoins := NewCoins(coins...)
+	for _, coin := range newCoins {
+		decCoins = append(decCoins, NewDecCoinFromCoin(coin))
+	}
+
+	return decCoins
 }
 
 // String implements the Stringer interface for DecCoins. It returns a
@@ -177,10 +214,10 @@ func (coins DecCoins) TruncateDecimal() (truncatedCoins Coins, changeCoins DecCo
 	for _, coin := range coins {
 		truncated, change := coin.TruncateDecimal()
 		if !truncated.IsZero() {
-			truncatedCoins = truncatedCoins.Add(Coins{truncated})
+			truncatedCoins = truncatedCoins.Add(truncated)
 		}
 		if !change.IsZero() {
-			changeCoins = changeCoins.Add(DecCoins{change})
+			changeCoins = changeCoins.Add(change)
 		}
 	}
 
@@ -194,7 +231,7 @@ func (coins DecCoins) TruncateDecimal() (truncatedCoins Coins, changeCoins DecCo
 //
 // CONTRACT: Add will never return Coins where one Coin has a non-positive
 // amount. In otherwords, IsValid will always return true.
-func (coins DecCoins) Add(coinsB DecCoins) DecCoins {
+func (coins DecCoins) Add(coinsB ...DecCoin) DecCoins {
 	return coins.safeAdd(coinsB)
 }
 
@@ -283,8 +320,9 @@ func (coins DecCoins) SafeSub(coinsB DecCoins) (DecCoins, bool) {
 // Intersect will return a new set of coins which contains the minimum DecCoin
 // for common denoms found in both `coins` and `coinsB`. For denoms not common
 // to both `coins` and `coinsB` the minimum is considered to be 0, thus they
-// are not added to the final set.In other words, trim any denom amount from
+// are not added to the final set. In other words, trim any denom amount from
 // coin which exceeds that of coinB, such that (coin.Intersect(coinB)).IsLTE(coinB).
+// See also Coins.Min().
 func (coins DecCoins) Intersect(coinsB DecCoins) DecCoins {
 	res := make([]DecCoin, len(coins))
 	for i, coin := range coins {
@@ -295,6 +333,11 @@ func (coins DecCoins) Intersect(coinsB DecCoins) DecCoins {
 		res[i] = minCoin
 	}
 	return removeZeroDecCoins(res)
+}
+
+// GetDenomByIndex returns the Denom to make the findDup generic
+func (coins DecCoins) GetDenomByIndex(i int) string {
+	return coins[i].Denom
 }
 
 // IsAnyNegative returns true if there is at least one coin whose amount
@@ -324,7 +367,7 @@ func (coins DecCoins) MulDec(d Dec) DecCoins {
 		}
 
 		if !product.IsZero() {
-			res = res.Add(DecCoins{product})
+			res = res.Add(product)
 		}
 	}
 
@@ -332,12 +375,15 @@ func (coins DecCoins) MulDec(d Dec) DecCoins {
 }
 
 // MulDecTruncate multiplies all the decimal coins by a decimal, truncating. It
-// panics if d is zero.
+// returns nil DecCoins if d is zero.
 //
 // CONTRACT: No zero coins will be returned.
 func (coins DecCoins) MulDecTruncate(d Dec) DecCoins {
-	var res DecCoins
+	if d.IsZero() {
+		return DecCoins{}
+	}
 
+	var res DecCoins
 	for _, coin := range coins {
 		product := DecCoin{
 			Denom:  coin.Denom,
@@ -345,7 +391,7 @@ func (coins DecCoins) MulDecTruncate(d Dec) DecCoins {
 		}
 
 		if !product.IsZero() {
-			res = res.Add(DecCoins{product})
+			res = res.Add(product)
 		}
 	}
 
@@ -368,7 +414,7 @@ func (coins DecCoins) QuoDec(d Dec) DecCoins {
 		}
 
 		if !quotient.IsZero() {
-			res = res.Add(DecCoins{quotient})
+			res = res.Add(quotient)
 		}
 	}
 
@@ -392,7 +438,7 @@ func (coins DecCoins) QuoDecTruncate(d Dec) DecCoins {
 		}
 
 		if !quotient.IsZero() {
-			res = res.Add(DecCoins{quotient})
+			res = res.Add(quotient)
 		}
 	}
 
@@ -404,7 +450,7 @@ func (coins DecCoins) Empty() bool {
 	return len(coins) == 0
 }
 
-// returns the amount of a denom from deccoins
+// AmountOf returns the amount of a denom from deccoins
 func (coins DecCoins) AmountOf(denom string) Dec {
 	mustValidateDenom(denom)
 
@@ -434,8 +480,8 @@ func (coins DecCoins) AmountOf(denom string) Dec {
 	}
 }
 
-// IsEqual returns true if the two sets of DecCoins have the same value.
-func (coins DecCoins) IsEqual(coinsB DecCoins) bool {
+// Equal returns true if the two sets of DecCoins have the same value.
+func (coins DecCoins) Equal(coinsB DecCoins) bool {
 	if len(coins) != len(coinsB) {
 		return false
 	}
@@ -452,7 +498,7 @@ func (coins DecCoins) IsEqual(coinsB DecCoins) bool {
 	return true
 }
 
-// return whether all coins are zero
+// IsZero returns whether all coins are zero
 func (coins DecCoins) IsZero() bool {
 	for _, coin := range coins {
 		if !coin.Amount.IsZero() {
@@ -462,43 +508,58 @@ func (coins DecCoins) IsZero() bool {
 	return true
 }
 
-// IsValid asserts the DecCoins are sorted, have positive amount, and Denom
-// does not contain upper case characters.
-func (coins DecCoins) IsValid() bool {
+// Validate checks that the DecCoins are sorted, have positive amount, with a valid and unique
+// denomination (i.e no duplicates). Otherwise, it returns an error.
+func (coins DecCoins) Validate() error {
 	switch len(coins) {
 	case 0:
-		return true
+		return nil
 
 	case 1:
-		if err := validateDenom(coins[0].Denom); err != nil {
-			return false
+		if err := ValidateDenom(coins[0].Denom); err != nil {
+			return err
 		}
-		return coins[0].IsPositive()
-
+		if !coins[0].IsPositive() {
+			return fmt.Errorf("coin %s amount is not positive", coins[0])
+		}
+		return nil
 	default:
 		// check single coin case
-		if !(DecCoins{coins[0]}).IsValid() {
-			return false
+		if err := (DecCoins{coins[0]}).Validate(); err != nil {
+			return err
 		}
 
 		lowDenom := coins[0].Denom
+		seenDenoms := make(map[string]bool)
+		seenDenoms[lowDenom] = true
+
 		for _, coin := range coins[1:] {
-			if strings.ToLower(coin.Denom) != coin.Denom {
-				return false
+			if seenDenoms[coin.Denom] {
+				return fmt.Errorf("duplicate denomination %s", coin.Denom)
+			}
+			if err := ValidateDenom(coin.Denom); err != nil {
+				return err
 			}
 			if coin.Denom <= lowDenom {
-				return false
+				return fmt.Errorf("denomination %s is not sorted", coin.Denom)
 			}
 			if !coin.IsPositive() {
-				return false
+				return fmt.Errorf("coin %s amount is not positive", coin.Denom)
 			}
 
 			// we compare each coin against the last denom
 			lowDenom = coin.Denom
+			seenDenoms[coin.Denom] = true
 		}
 
-		return true
+		return nil
 	}
+}
+
+// IsValid calls Validate and returns true when the DecCoins are sorted, have positive amount, with a
+// valid and unique denomination (i.e no duplicates).
+func (coins DecCoins) IsValid() bool {
+	return coins.Validate() == nil
 }
 
 // IsAllPositive returns true if there is at least one coin and all currencies
@@ -520,29 +581,30 @@ func (coins DecCoins) IsAllPositive() bool {
 }
 
 func removeZeroDecCoins(coins DecCoins) DecCoins {
-	i, l := 0, len(coins)
-	for i < l {
-		if coins[i].IsZero() {
-			// remove coin
-			coins = append(coins[:i], coins[i+1:]...)
-			l--
-		} else {
-			i++
+	result := make([]DecCoin, 0, len(coins))
+
+	for _, coin := range coins {
+		if !coin.IsZero() {
+			result = append(result, coin)
 		}
 	}
 
-	return coins[:i]
+	return result
 }
 
 //-----------------------------------------------------------------------------
 // Sorting
 
-var _ sort.Interface = Coins{}
+var _ sort.Interface = DecCoins{}
 
-//nolint
-func (coins DecCoins) Len() int           { return len(coins) }
+// Len implements sort.Interface for DecCoins
+func (coins DecCoins) Len() int { return len(coins) }
+
+// Less implements sort.Interface for DecCoins
 func (coins DecCoins) Less(i, j int) bool { return coins[i].Denom < coins[j].Denom }
-func (coins DecCoins) Swap(i, j int)      { coins[i], coins[j] = coins[j], coins[i] }
+
+// Swap implements sort.Interface for DecCoins
+func (coins DecCoins) Swap(i, j int) { coins[i], coins[j] = coins[j], coins[i] }
 
 // Sort is a helper function to sort the set of decimal coins in-place.
 func (coins DecCoins) Sort() DecCoins {
@@ -570,16 +632,19 @@ func ParseDecCoin(coinStr string) (coin DecCoin, err error) {
 		return DecCoin{}, errors.Wrap(err, fmt.Sprintf("failed to parse decimal coin amount: %s", amountStr))
 	}
 
-	if err := validateDenom(denomStr); err != nil {
-		return DecCoin{}, fmt.Errorf("invalid denom cannot contain upper case characters or spaces: %s", err)
+	if err := ValidateDenom(denomStr); err != nil {
+		return DecCoin{}, fmt.Errorf("invalid denom cannot contain spaces: %s", err)
 	}
 
 	return NewDecCoinFromDec(denomStr, amount), nil
 }
 
-// ParseDecCoins will parse out a list of decimal coins separated by commas.
-// If nothing is provided, it returns nil DecCoins. Returned decimal coins are
-// sorted.
+// ParseDecCoins will parse out a list of decimal coins separated by commas. If the parsing is successuful,
+// the provided coins will be sanitized by removing zero coins and sorting the coin set. Lastly
+// a validation of the coin set is executed. If the check passes, ParseDecCoins will return the sanitized coins.
+// Otherwise it will return an error.
+// If an empty string is provided to ParseDecCoins, it returns nil Coins.
+// Expected format: "{amount0}{denomination},...,{amountN}{denominationN}"
 func ParseDecCoins(coinsStr string) (DecCoins, error) {
 	coinsStr = strings.TrimSpace(coinsStr)
 	if len(coinsStr) == 0 {
@@ -587,23 +652,20 @@ func ParseDecCoins(coinsStr string) (DecCoins, error) {
 	}
 
 	coinStrs := strings.Split(coinsStr, ",")
-	coins := make(DecCoins, len(coinStrs))
+	decCoins := make(DecCoins, len(coinStrs))
 	for i, coinStr := range coinStrs {
 		coin, err := ParseDecCoin(coinStr)
 		if err != nil {
 			return nil, err
 		}
 
-		coins[i] = coin
+		decCoins[i] = coin
 	}
 
-	// sort coins for determinism
-	coins.Sort()
-
-	// validate coins before returning
-	if !coins.IsValid() {
-		return nil, fmt.Errorf("parsed decimal coins are invalid: %#v", coins)
+	newDecCoins := sanitizeDecCoins(decCoins)
+	if err := newDecCoins.Validate(); err != nil {
+		return nil, err
 	}
 
-	return coins, nil
+	return newDecCoins, nil
 }

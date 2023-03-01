@@ -1,58 +1,49 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/tendermint/tendermint/types"
+	"golang.org/x/exp/maps"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/server"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/version"
-	extypes "github.com/cosmos/cosmos-sdk/x/genutil"
-	v036 "github.com/cosmos/cosmos-sdk/x/genutil/legacy/v0_36"
-	v038 "github.com/cosmos/cosmos-sdk/x/genutil/legacy/v0_38"
+	v043 "github.com/cosmos/cosmos-sdk/x/genutil/migrations/v043"
+	v046 "github.com/cosmos/cosmos-sdk/x/genutil/migrations/v046"
+	v047 "github.com/cosmos/cosmos-sdk/x/genutil/migrations/v047"
+	"github.com/cosmos/cosmos-sdk/x/genutil/types"
 )
 
-const (
-	flagGenesisTime = "genesis-time"
-	flagChainID     = "chain-id"
-)
+const flagGenesisTime = "genesis-time"
 
 // Allow applications to extend and modify the migration process.
 //
 // Ref: https://github.com/cosmos/cosmos-sdk/issues/5041
-var migrationMap = extypes.MigrationMap{
-	"v0.36": v036.Migrate,
-	"v0.38": v038.Migrate, // NOTE: v0.37 and v0.38 are genesis compatible
+var migrationMap = types.MigrationMap{
+	"v0.43": v043.Migrate, // NOTE: v0.43, v0.44 and v0.45 are genesis compatible.
+	"v0.46": v046.Migrate,
+	"v0.47": v047.Migrate,
 }
 
 // GetMigrationCallback returns a MigrationCallback for a given version.
-func GetMigrationCallback(version string) extypes.MigrationCallback {
+func GetMigrationCallback(version string) types.MigrationCallback {
 	return migrationMap[version]
 }
 
 // GetMigrationVersions get all migration version in a sorted slice.
 func GetMigrationVersions() []string {
-	versions := make([]string, len(migrationMap))
-
-	var i int
-	for version := range migrationMap {
-		versions[i] = version
-		i++
-	}
-
+	versions := maps.Keys(migrationMap)
 	sort.Strings(versions)
+
 	return versions
 }
 
 // MigrateGenesisCmd returns a command to execute genesis state migration.
-// nolint: funlen
-func MigrateGenesisCmd(_ *server.Context, cdc *codec.Codec) *cobra.Command {
+func MigrateGenesisCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate [target-version] [genesis-file]",
 		Short: "Migrate genesis to a specified target version",
@@ -60,22 +51,36 @@ func MigrateGenesisCmd(_ *server.Context, cdc *codec.Codec) *cobra.Command {
 
 Example:
 $ %s migrate v0.36 /path/to/genesis.json --chain-id=cosmoshub-3 --genesis-time=2019-04-22T17:00:00Z
-`, version.ServerName),
+`, version.AppName),
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx := client.GetClientContextFromCmd(cmd)
+
 			var err error
 
 			target := args[0]
 			importGenesis := args[1]
 
-			genDoc, err := types.GenesisDocFromFile(importGenesis)
+			appGenesis, err := types.AppGenesisFromFile(importGenesis)
 			if err != nil {
-				return errors.Wrapf(err, "failed to read genesis document from file %s", importGenesis)
+				return err
 			}
 
-			var initialState extypes.AppMap
-			if err := cdc.UnmarshalJSON(genDoc.AppState, &initialState); err != nil {
-				return errors.Wrap(err, "failed to JSON unmarshal initial genesis state")
+			if err := appGenesis.ValidateAndComplete(); err != nil {
+				return fmt.Errorf("make sure that you have correctly migrated all CometBFT consensus params. Refer the UPGRADING.md (%s): %w", chainUpgradeGuide, err)
+			}
+
+			// Since some default values are valid values, we just print to
+			// make sure the user didn't forget to update these values.
+			if appGenesis.Consensus.Params.Evidence.MaxBytes == 0 {
+				fmt.Printf("Warning: consensus.params.evidence.max_bytes is set to 0. If this is"+
+					" deliberate, feel free to ignore this warning. If not, please have a look at the chain"+
+					" upgrade guide at %s.\n", chainUpgradeGuide)
+			}
+
+			var initialState types.AppMap
+			if err := json.Unmarshal(appGenesis.AppState, &initialState); err != nil {
+				return fmt.Errorf("failed to JSON unmarshal initial genesis state: %w", err)
 			}
 
 			migrationFunc := GetMigrationCallback(target)
@@ -84,47 +89,52 @@ $ %s migrate v0.36 /path/to/genesis.json --chain-id=cosmoshub-3 --genesis-time=2
 			}
 
 			// TODO: handler error from migrationFunc call
-			newGenState := migrationFunc(initialState)
+			newGenState := migrationFunc(initialState, clientCtx)
 
-			genDoc.AppState, err = cdc.MarshalJSON(newGenState)
+			appGenesis.AppState, err = json.Marshal(newGenState)
 			if err != nil {
-				return errors.Wrap(err, "failed to JSON marshal migrated genesis state")
+				return fmt.Errorf("failed to JSON marshal migrated genesis state: %w", err)
 			}
 
-			genesisTime := cmd.Flag(flagGenesisTime).Value.String()
+			genesisTime, _ := cmd.Flags().GetString(flagGenesisTime)
 			if genesisTime != "" {
 				var t time.Time
 
 				err := t.UnmarshalText([]byte(genesisTime))
 				if err != nil {
-					return errors.Wrap(err, "failed to unmarshal genesis time")
+					return fmt.Errorf("failed to unmarshal genesis time: %w", err)
 				}
 
-				genDoc.GenesisTime = t
+				appGenesis.GenesisTime = t
 			}
 
-			chainID := cmd.Flag(flagChainID).Value.String()
+			chainID, _ := cmd.Flags().GetString(flags.FlagChainID)
 			if chainID != "" {
-				genDoc.ChainID = chainID
+				appGenesis.ChainID = chainID
 			}
 
-			bz, err := cdc.MarshalJSONIndent(genDoc, "", "  ")
+			bz, err := json.Marshal(appGenesis)
 			if err != nil {
-				return errors.Wrap(err, "failed to marshal genesis doc")
+				return fmt.Errorf("failed to marshal app genesis: %w", err)
 			}
 
-			sortedBz, err := sdk.SortJSON(bz)
-			if err != nil {
-				return errors.Wrap(err, "failed to sort JSON genesis doc")
+			outputDocument, _ := cmd.Flags().GetString(flags.FlagOutputDocument)
+			if outputDocument == "" {
+				cmd.Println(string(bz))
+				return nil
 			}
 
-			fmt.Println(string(sortedBz))
+			if err = appGenesis.SaveAs(outputDocument); err != nil {
+				return err
+			}
+
 			return nil
 		},
 	}
 
-	cmd.Flags().String(flagGenesisTime, "", "override genesis_time with this flag")
-	cmd.Flags().String(flagChainID, "", "override chain_id with this flag")
+	cmd.Flags().String(flagGenesisTime, "", "Override genesis_time with this flag")
+	cmd.Flags().String(flags.FlagChainID, "", "Override chain_id with this flag")
+	cmd.Flags().String(flags.FlagOutputDocument, "", "Exported state is written to the given file instead of STDOUT")
 
 	return cmd
 }

@@ -1,31 +1,31 @@
-package simulation
+package simulation_test
 
 import (
 	"fmt"
 	"testing"
 
+	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 
-	cmn "github.com/tendermint/tendermint/libs/common"
-
-	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/mint/internal/types"
+	"github.com/cosmos/cosmos-sdk/types/kv"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/mint"
+	"github.com/cosmos/cosmos-sdk/x/mint/simulation"
+	"github.com/cosmos/cosmos-sdk/x/mint/types"
 )
 
-func makeTestCodec() (cdc *codec.Codec) {
-	cdc = codec.New()
-	sdk.RegisterCodec(cdc)
-	return
-}
-
 func TestDecodeStore(t *testing.T) {
-	cdc := makeTestCodec()
-	minter := types.NewMinter(sdk.OneDec(), sdk.NewDec(15))
+	encCfg := moduletestutil.MakeTestEncodingConfig(mint.AppModuleBasic{})
 
-	kvPairs := cmn.KVPairs{
-		cmn.KVPair{Key: types.MinterKey, Value: cdc.MustMarshalBinaryLengthPrefixed(minter)},
-		cmn.KVPair{Key: []byte{0x99}, Value: []byte{0x99}},
+	dec := simulation.NewDecodeStore(encCfg.Codec)
+
+	minter := types.NewMinter(math.LegacyOneDec(), math.LegacyNewDec(15))
+
+	kvPairs := kv.Pairs{
+		Pairs: []kv.Pair{
+			{Key: types.MinterKey, Value: encCfg.Codec.MustMarshal(&minter)},
+			{Key: []byte{0x99}, Value: []byte{0x99}},
+		},
 	}
 	tests := []struct {
 		name        string
@@ -40,9 +40,9 @@ func TestDecodeStore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			switch i {
 			case len(tests) - 1:
-				require.Panics(t, func() { DecodeStore(cdc, kvPairs[i], kvPairs[i]) }, tt.name)
+				require.Panics(t, func() { dec(kvPairs.Pairs[i], kvPairs.Pairs[i]) }, tt.name)
 			default:
-				require.Equal(t, tt.expectedLog, DecodeStore(cdc, kvPairs[i], kvPairs[i]), tt.name)
+				require.Equal(t, tt.expectedLog, dec(kvPairs.Pairs[i], kvPairs.Pairs[i]), tt.name)
 			}
 		})
 	}

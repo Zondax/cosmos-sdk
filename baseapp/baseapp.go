@@ -1,45 +1,41 @@
 package baseapp
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"reflect"
-	"runtime/debug"
+	"sort"
 	"strings"
 
-	"github.com/gogo/protobuf/proto"
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/crypto/tmhash"
-	"github.com/tendermint/tendermint/libs/log"
-	dbm "github.com/tendermint/tm-db"
+	"cosmossdk.io/log"
+	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto/tmhash"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/gogoproto/proto"
+	"golang.org/x/exp/maps"
 
-	"github.com/cosmos/cosmos-sdk/store"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/store"
+	storemetrics "cosmossdk.io/store/metrics"
+	"cosmossdk.io/store/snapshots"
+	storetypes "cosmossdk.io/store/types"
+
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/cosmos/cosmos-sdk/types/mempool"
 )
 
 const (
-	// Check a transaction
-	runTxModeCheck runTxMode = iota
-	// Simulate a transaction
-	runTxModeSimulate runTxMode = iota
-	// Deliver a transaction
-	runTxModeDeliver runTxMode = iota
-
-	// MainStoreKey is the string representation of the main store
-	MainStoreKey = "main"
+	runTxModeCheck       runTxMode = iota // Check a transaction
+	runTxModeReCheck                      // Recheck a (pending) transaction after a commit
+	runTxModeSimulate                     // Simulate a transaction
+	runTxModeDeliver                      // Deliver a transaction
+	runTxPrepareProposal                  // Prepare a TM block proposal
+	runTxProcessProposal                  // Process a TM block proposal
 )
 
-var (
-	_ abci.Application = (*BaseApp)(nil)
-
-	// mainConsensusParamsKey defines a key to store the consensus params in the
-	// main store.
-	mainConsensusParamsKey = []byte("consensus_params")
-)
+var _ abci.Application = (*BaseApp)(nil)
 
 type (
 	// Enum mode for app.runTx
@@ -49,52 +45,64 @@ type (
 	// from disk. This is useful for state migration, when loading a datastore written with
 	// an older version of the software. In particular, if a module changed the substore key name
 	// (or removed a substore) between two versions of the software.
-	StoreLoader func(ms sdk.CommitMultiStore) error
+	StoreLoader func(ms storetypes.CommitMultiStore) error
 )
 
 // BaseApp reflects the ABCI application implementation.
-type BaseApp struct { // nolint: maligned
+type BaseApp struct { //nolint: maligned
 	// initialized on creation
-	logger      log.Logger
-	name        string               // application name from abci.Info
-	db          dbm.DB               // common DB backend
-	cms         sdk.CommitMultiStore // Main (uncached) state
-	storeLoader StoreLoader          // function to handle store loading, may be overridden with SetStoreLoader()
-	router      sdk.Router           // handle any kind of message
-	queryRouter sdk.QueryRouter      // router for redirecting query calls
-	txDecoder   sdk.TxDecoder        // unmarshal []byte into sdk.Tx
+	logger            log.Logger
+	name              string                      // application name from abci.Info
+	db                dbm.DB                      // common DB backend
+	cms               storetypes.CommitMultiStore // Main (uncached) state
+	qms               storetypes.MultiStore       // Optional alternative multistore for querying only.
+	storeLoader       StoreLoader                 // function to handle store loading, may be overridden with SetStoreLoader()
+	grpcQueryRouter   *GRPCQueryRouter            // router for redirecting gRPC query calls
+	msgServiceRouter  *MsgServiceRouter           // router for redirecting Msg service messages
+	interfaceRegistry codectypes.InterfaceRegistry
+	txDecoder         sdk.TxDecoder // unmarshal []byte into sdk.Tx
+	txEncoder         sdk.TxEncoder // marshal sdk.Tx into []byte
 
-	// set upon LoadVersion or LoadLatestVersion.
-	baseKey *sdk.KVStoreKey // Main KVStore in cms
+	mempool         mempool.Mempool            // application side mempool
+	anteHandler     sdk.AnteHandler            // ante handler for fee and auth
+	postHandler     sdk.PostHandler            // post handler, optional, e.g. for tips
+	initChainer     sdk.InitChainer            // initialize state with validators and state blob
+	beginBlocker    sdk.BeginBlocker           // logic to run before any txs
+	processProposal sdk.ProcessProposalHandler // the handler which runs on ABCI ProcessProposal
+	prepareProposal sdk.PrepareProposalHandler // the handler which runs on ABCI PrepareProposal
+	endBlocker      sdk.EndBlocker             // logic to run after all txs, and to determine valset changes
+	addrPeerFilter  sdk.PeerFilter             // filter peers by address and port
+	idPeerFilter    sdk.PeerFilter             // filter peers by node ID
+	fauxMerkleMode  bool                       // if true, IAVL MountStores uses MountStoresDB for simulation speed.
 
-	anteHandler    sdk.AnteHandler  // ante handler for fee and auth
-	initChainer    sdk.InitChainer  // initialize state with validators and state blob
-	beginBlocker   sdk.BeginBlocker // logic to run before any txs
-	endBlocker     sdk.EndBlocker   // logic to run after all txs, and to determine valset changes
-	addrPeerFilter sdk.PeerFilter   // filter peers by address and port
-	idPeerFilter   sdk.PeerFilter   // filter peers by node ID
-	fauxMerkleMode bool             // if true, IAVL MountStores uses MountStoresDB for simulation speed.
+	// manages snapshots, i.e. dumps of app state at certain intervals
+	snapshotManager *snapshots.Manager
 
 	// volatile states:
 	//
 	// checkState is set on InitChain and reset on Commit
 	// deliverState is set on InitChain and BeginBlock and set to nil on Commit
-	checkState   *state // for CheckTx
-	deliverState *state // for DeliverTx
+	checkState           *state // for CheckTx
+	deliverState         *state // for DeliverTx
+	processProposalState *state // for ProcessProposal
+	prepareProposalState *state // for PrepareProposal
 
 	// an inter-block write-through cache provided to the context during deliverState
-	interBlockCache sdk.MultiStorePersistentCache
+	interBlockCache storetypes.MultiStorePersistentCache
 
 	// absent validators from begin block
 	voteInfos []abci.VoteInfo
 
-	// consensus params
-	// TODO: Move this in the future to baseapp param store on main store.
-	consensusParams *abci.ConsensusParams
+	// paramStore is used to query for ABCI consensus parameters from an
+	// application parameter store.
+	paramStore ParamStore
 
 	// The minimum gas prices a validator is willing to accept for processing a
 	// transaction. This is mainly used for DoS and spam prevention.
 	minGasPrices sdk.DecCoins
+
+	// initialHeight is the initial height at which we start the baseapp
+	initialHeight int64
 
 	// flag for sealing options and parameters to a BaseApp
 	sealed bool
@@ -105,8 +113,38 @@ type BaseApp struct { // nolint: maligned
 	// minimum block time (in Unix seconds) at which to halt the chain and gracefully shutdown
 	haltTime uint64
 
+	// minRetainBlocks defines the minimum block height offset from the current
+	// block being committed, such that all blocks past this offset are pruned
+	// from CometBFT. It is used as part of the process of determining the
+	// ResponseCommit.RetainHeight value during ABCI Commit. A value of 0 indicates
+	// that no blocks should be pruned.
+	//
+	// Note: CometBFT block pruning is dependant on this parameter in conjunction
+	// with the unbonding (safety threshold) period, state pruning and state sync
+	// snapshot parameters to determine the correct minimum value of
+	// ResponseCommit.RetainHeight.
+	minRetainBlocks uint64
+
 	// application's version string
-	appVersion string
+	version string
+
+	// application's protocol version that increments on every upgrade
+	// if BaseApp is passed to the upgrade keeper's NewKeeper method.
+	appVersion uint64
+
+	// recovery handler for app.runTx method
+	runTxRecoveryMiddleware recoveryMiddleware
+
+	// trace set will return full stack traces for errors in ABCI Log field
+	trace bool
+
+	// indexEvents defines the set of events in the form {eventType}.{attributeKey},
+	// which informs CometBFT what to index. If empty, all events will be indexed.
+	indexEvents map[string]struct{}
+
+	// abciListeners for hooking into the ABCI message processing of the BaseApp
+	// and exposing the requests and responses to external consumers
+	abciListeners []storetypes.ABCIListener
 }
 
 // NewBaseApp returns a reference to an initialized BaseApp. It accepts a
@@ -117,25 +155,39 @@ type BaseApp struct { // nolint: maligned
 func NewBaseApp(
 	name string, logger log.Logger, db dbm.DB, txDecoder sdk.TxDecoder, options ...func(*BaseApp),
 ) *BaseApp {
-
 	app := &BaseApp{
-		logger:         logger,
-		name:           name,
-		db:             db,
-		cms:            store.NewCommitMultiStore(db),
-		storeLoader:    DefaultStoreLoader,
-		router:         NewRouter(),
-		queryRouter:    NewQueryRouter(),
-		txDecoder:      txDecoder,
-		fauxMerkleMode: false,
+		logger:           logger,
+		name:             name,
+		db:               db,
+		cms:              store.NewCommitMultiStore(db, logger, storemetrics.NewNoOpMetrics()), // by default we use a no-op metric gather in store
+		storeLoader:      DefaultStoreLoader,
+		grpcQueryRouter:  NewGRPCQueryRouter(),
+		msgServiceRouter: NewMsgServiceRouter(),
+		txDecoder:        txDecoder,
+		fauxMerkleMode:   false,
 	}
+
 	for _, option := range options {
 		option(app)
+	}
+
+	if app.mempool == nil {
+		app.SetMempool(mempool.NoOpMempool{})
+	}
+
+	if app.processProposal == nil {
+		app.SetProcessProposal(app.DefaultProcessProposal())
+	}
+
+	if app.prepareProposal == nil {
+		app.SetPrepareProposal(app.DefaultPrepareProposal())
 	}
 
 	if app.interBlockCache != nil {
 		app.cms.SetInterBlockCache(app.interBlockCache)
 	}
+
+	app.runTxRecoveryMiddleware = newDefaultRecoveryMiddleware()
 
 	return app
 }
@@ -145,9 +197,14 @@ func (app *BaseApp) Name() string {
 	return app.name
 }
 
-// AppVersion returns the application's version string.
-func (app *BaseApp) AppVersion() string {
+// AppVersion returns the application's protocol version.
+func (app *BaseApp) AppVersion() uint64 {
 	return app.appVersion
+}
+
+// Version returns the application's version string.
+func (app *BaseApp) Version() string {
+	return app.version
 }
 
 // Logger returns the logger of the BaseApp.
@@ -155,146 +212,127 @@ func (app *BaseApp) Logger() log.Logger {
 	return app.logger
 }
 
+// Trace returns the boolean value for logging error stack traces.
+func (app *BaseApp) Trace() bool {
+	return app.trace
+}
+
+// MsgServiceRouter returns the MsgServiceRouter of a BaseApp.
+func (app *BaseApp) MsgServiceRouter() *MsgServiceRouter { return app.msgServiceRouter }
+
+// SetMsgServiceRouter sets the MsgServiceRouter of a BaseApp.
+func (app *BaseApp) SetMsgServiceRouter(msgServiceRouter *MsgServiceRouter) {
+	app.msgServiceRouter = msgServiceRouter
+}
+
 // MountStores mounts all IAVL or DB stores to the provided keys in the BaseApp
 // multistore.
-func (app *BaseApp) MountStores(keys ...sdk.StoreKey) {
+func (app *BaseApp) MountStores(keys ...storetypes.StoreKey) {
 	for _, key := range keys {
 		switch key.(type) {
-		case *sdk.KVStoreKey:
+		case *storetypes.KVStoreKey:
 			if !app.fauxMerkleMode {
-				app.MountStore(key, sdk.StoreTypeIAVL)
+				app.MountStore(key, storetypes.StoreTypeIAVL)
 			} else {
 				// StoreTypeDB doesn't do anything upon commit, and it doesn't
 				// retain history, but it's useful for faster simulation.
-				app.MountStore(key, sdk.StoreTypeDB)
+				app.MountStore(key, storetypes.StoreTypeDB)
 			}
 
-		case *sdk.TransientStoreKey:
-			app.MountStore(key, sdk.StoreTypeTransient)
+		case *storetypes.TransientStoreKey:
+			app.MountStore(key, storetypes.StoreTypeTransient)
+
+		case *storetypes.MemoryStoreKey:
+			app.MountStore(key, storetypes.StoreTypeMemory)
 
 		default:
-			panic("Unrecognized store key type " + reflect.TypeOf(key).Name())
+			panic(fmt.Sprintf("Unrecognized store key type :%T", key))
 		}
 	}
 }
 
-// MountStores mounts all IAVL or DB stores to the provided keys in the BaseApp
-// multistore.
-func (app *BaseApp) MountKVStores(keys map[string]*sdk.KVStoreKey) {
+// MountKVStores mounts all IAVL or DB stores to the provided keys in the
+// BaseApp multistore.
+func (app *BaseApp) MountKVStores(keys map[string]*storetypes.KVStoreKey) {
 	for _, key := range keys {
 		if !app.fauxMerkleMode {
-			app.MountStore(key, sdk.StoreTypeIAVL)
+			app.MountStore(key, storetypes.StoreTypeIAVL)
 		} else {
 			// StoreTypeDB doesn't do anything upon commit, and it doesn't
 			// retain history, but it's useful for faster simulation.
-			app.MountStore(key, sdk.StoreTypeDB)
+			app.MountStore(key, storetypes.StoreTypeDB)
 		}
 	}
 }
 
-// MountStores mounts all IAVL or DB stores to the provided keys in the BaseApp
-// multistore.
-func (app *BaseApp) MountTransientStores(keys map[string]*sdk.TransientStoreKey) {
+// MountTransientStores mounts all transient stores to the provided keys in
+// the BaseApp multistore.
+func (app *BaseApp) MountTransientStores(keys map[string]*storetypes.TransientStoreKey) {
 	for _, key := range keys {
-		app.MountStore(key, sdk.StoreTypeTransient)
+		app.MountStore(key, storetypes.StoreTypeTransient)
 	}
 }
 
-// MountStoreWithDB mounts a store to the provided key in the BaseApp
-// multistore, using a specified DB.
-func (app *BaseApp) MountStoreWithDB(key sdk.StoreKey, typ sdk.StoreType, db dbm.DB) {
-	app.cms.MountStoreWithDB(key, typ, db)
+// MountMemoryStores mounts all in-memory KVStores with the BaseApp's internal
+// commit multi-store.
+func (app *BaseApp) MountMemoryStores(keys map[string]*storetypes.MemoryStoreKey) {
+	skeys := maps.Keys(keys)
+	sort.Strings(skeys)
+	for _, key := range skeys {
+		memKey := keys[key]
+		app.MountStore(memKey, storetypes.StoreTypeMemory)
+	}
 }
 
 // MountStore mounts a store to the provided key in the BaseApp multistore,
 // using the default DB.
-func (app *BaseApp) MountStore(key sdk.StoreKey, typ sdk.StoreType) {
+func (app *BaseApp) MountStore(key storetypes.StoreKey, typ storetypes.StoreType) {
 	app.cms.MountStoreWithDB(key, typ, nil)
 }
 
 // LoadLatestVersion loads the latest application version. It will panic if
 // called more than once on a running BaseApp.
-func (app *BaseApp) LoadLatestVersion(baseKey *sdk.KVStoreKey) error {
+func (app *BaseApp) LoadLatestVersion() error {
 	err := app.storeLoader(app.cms)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load latest version: %w", err)
 	}
-	return app.initFromMainStore(baseKey)
+
+	return app.Init()
 }
 
 // DefaultStoreLoader will be used by default and loads the latest version
-func DefaultStoreLoader(ms sdk.CommitMultiStore) error {
+func DefaultStoreLoader(ms storetypes.CommitMultiStore) error {
 	return ms.LoadLatestVersion()
 }
 
-// StoreLoaderWithUpgrade is used to prepare baseapp with a fixed StoreLoader
-// pattern. This is useful in test cases, or with custom upgrade loading logic.
-func StoreLoaderWithUpgrade(upgrades *storetypes.StoreUpgrades) StoreLoader {
-	return func(ms sdk.CommitMultiStore) error {
-		return ms.LoadLatestVersionAndUpgrade(upgrades)
-	}
+// CommitMultiStore returns the root multi-store.
+// App constructor can use this to access the `cms`.
+// UNSAFE: must not be used during the abci life cycle.
+func (app *BaseApp) CommitMultiStore() storetypes.CommitMultiStore {
+	return app.cms
 }
 
-// UpgradeableStoreLoader can be configured by SetStoreLoader() to check for the
-// existence of a given upgrade file - json encoded StoreUpgrades data.
-//
-// If not file is present, it will peform the default load (no upgrades to store).
-//
-// If the file is present, it will parse the file and execute those upgrades
-// (rename or delete stores), while loading the data. It will also delete the
-// upgrade file upon successful load, so that the upgrade is only applied once,
-// and not re-applied on next restart
-//
-// This is useful for in place migrations when a store key is renamed between
-// two versions of the software. (TODO: this code will move to x/upgrades
-// when PR #4233 is merged, here mainly to help test the design)
-func UpgradeableStoreLoader(upgradeInfoPath string) StoreLoader {
-	return func(ms sdk.CommitMultiStore) error {
-		_, err := os.Stat(upgradeInfoPath)
-		if os.IsNotExist(err) {
-			return DefaultStoreLoader(ms)
-		} else if err != nil {
-			return err
-		}
-
-		// there is a migration file, let's execute
-		data, err := ioutil.ReadFile(upgradeInfoPath)
-		if err != nil {
-			return fmt.Errorf("cannot read upgrade file %s: %v", upgradeInfoPath, err)
-		}
-
-		var upgrades storetypes.StoreUpgrades
-		err = json.Unmarshal(data, &upgrades)
-		if err != nil {
-			return fmt.Errorf("cannot parse upgrade file: %v", err)
-		}
-
-		err = ms.LoadLatestVersionAndUpgrade(&upgrades)
-		if err != nil {
-			return fmt.Errorf("load and upgrade database: %v", err)
-		}
-
-		// if we have a successful load, we delete the file
-		err = os.Remove(upgradeInfoPath)
-		if err != nil {
-			return fmt.Errorf("deleting upgrade file %s: %v", upgradeInfoPath, err)
-		}
-		return nil
-	}
+// SnapshotManager returns the snapshot manager.
+// application use this to register extra extension snapshotters.
+func (app *BaseApp) SnapshotManager() *snapshots.Manager {
+	return app.snapshotManager
 }
 
 // LoadVersion loads the BaseApp application version. It will panic if called
 // more than once on a running baseapp.
-func (app *BaseApp) LoadVersion(version int64, baseKey *sdk.KVStoreKey) error {
+func (app *BaseApp) LoadVersion(version int64) error {
+	app.logger.Info("NOTICE: this could take a long time to migrate IAVL store to fastnode if you enable Fast Node.\n")
 	err := app.cms.LoadVersion(version)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load version %d: %w", version, err)
 	}
-	return app.initFromMainStore(baseKey)
+
+	return app.Init()
 }
 
 // LastCommitID returns the last CommitID of the multistore.
-func (app *BaseApp) LastCommitID() sdk.CommitID {
+func (app *BaseApp) LastCommitID() storetypes.CommitID {
 	return app.cms.LastCommitID()
 }
 
@@ -303,40 +341,30 @@ func (app *BaseApp) LastBlockHeight() int64 {
 	return app.cms.LastCommitID().Version
 }
 
-// initializes the remaining logic from app.cms
-func (app *BaseApp) initFromMainStore(baseKey *sdk.KVStoreKey) error {
-	mainStore := app.cms.GetKVStore(baseKey)
-	if mainStore == nil {
-		return errors.New("baseapp expects MultiStore with 'main' KVStore")
+// Init initializes the app. It seals the app, preventing any
+// further modifications. In addition, it validates the app against
+// the earlier provided settings. Returns an error if validation fails.
+// nil otherwise. Panics if the app is already sealed.
+func (app *BaseApp) Init() error {
+	if app.sealed {
+		panic("cannot call initFromMainStore: baseapp already sealed")
 	}
 
-	// memoize baseKey
-	if app.baseKey != nil {
-		panic("app.baseKey expected to be nil; duplicate init?")
-	}
-	app.baseKey = baseKey
-
-	// Load the consensus params from the main store. If the consensus params are
-	// nil, it will be saved later during InitChain.
-	//
-	// TODO: assert that InitChain hasn't yet been called.
-	consensusParamsBz := mainStore.Get(mainConsensusParamsKey)
-	if consensusParamsBz != nil {
-		var consensusParams = &abci.ConsensusParams{}
-
-		err := proto.Unmarshal(consensusParamsBz, consensusParams)
-		if err != nil {
-			panic(err)
-		}
-
-		app.setConsensusParams(consensusParams)
-	}
+	emptyHeader := cmtproto.Header{}
 
 	// needed for the export command which inits from store but never calls initchain
-	app.setCheckState(abci.Header{})
+	app.setState(runTxModeCheck, emptyHeader)
+
+	// needed for ABCI Replay Blocks mode which calls Prepare/Process proposal (InitChain is not called)
+	app.setState(runTxPrepareProposal, emptyHeader)
+	app.setState(runTxProcessProposal, emptyHeader)
 	app.Seal()
 
-	return nil
+	if app.cms == nil {
+		return errors.New("commit multi-store must not be nil")
+	}
+
+	return app.cms.GetPruning().Validate()
 }
 
 func (app *BaseApp) setMinGasPrices(gasPrices sdk.DecCoins) {
@@ -351,22 +379,25 @@ func (app *BaseApp) setHaltTime(haltTime uint64) {
 	app.haltTime = haltTime
 }
 
-func (app *BaseApp) setInterBlockCache(cache sdk.MultiStorePersistentCache) {
+func (app *BaseApp) setMinRetainBlocks(minRetainBlocks uint64) {
+	app.minRetainBlocks = minRetainBlocks
+}
+
+func (app *BaseApp) setInterBlockCache(cache storetypes.MultiStorePersistentCache) {
 	app.interBlockCache = cache
 }
 
-// Router returns the router of the BaseApp.
-func (app *BaseApp) Router() sdk.Router {
-	if app.sealed {
-		// We cannot return a Router when the app is sealed because we can't have
-		// any routes modified which would cause unexpected routing behavior.
-		panic("Router() on sealed BaseApp")
-	}
-	return app.router
+func (app *BaseApp) setTrace(trace bool) {
+	app.trace = trace
 }
 
-// QueryRouter returns the QueryRouter of a BaseApp.
-func (app *BaseApp) QueryRouter() sdk.QueryRouter { return app.queryRouter }
+func (app *BaseApp) setIndexEvents(ie []string) {
+	app.indexEvents = make(map[string]struct{})
+
+	for _, e := range ie {
+		app.indexEvents[e] = struct{}{}
+	}
+}
 
 // Seal seals a BaseApp. It prohibits any further modifications to a BaseApp.
 func (app *BaseApp) Seal() { app.sealed = true }
@@ -374,54 +405,83 @@ func (app *BaseApp) Seal() { app.sealed = true }
 // IsSealed returns true if the BaseApp is sealed and false otherwise.
 func (app *BaseApp) IsSealed() bool { return app.sealed }
 
-// setCheckState sets the BaseApp's checkState with a cache-wrapped multi-store
-// (i.e. a CacheMultiStore) and a new Context with the cache-wrapped multi-store,
-// provided header, and minimum gas prices set. It is set on InitChain and reset
-// on Commit.
-func (app *BaseApp) setCheckState(header abci.Header) {
+// setState sets the BaseApp's state for the corresponding mode with a branched
+// multi-store (i.e. a CacheMultiStore) and a new Context with the same
+// multi-store branch, and provided header.
+func (app *BaseApp) setState(mode runTxMode, header cmtproto.Header) {
 	ms := app.cms.CacheMultiStore()
-	app.checkState = &state{
-		ms:  ms,
-		ctx: sdk.NewContext(ms, header, true, app.logger).WithMinGasPrices(app.minGasPrices),
-	}
-}
-
-// setDeliverState sets the BaseApp's deliverState with a cache-wrapped multi-store
-// (i.e. a CacheMultiStore) and a new Context with the cache-wrapped multi-store,
-// and provided header. It is set on InitChain and BeginBlock and set to nil on
-// Commit.
-func (app *BaseApp) setDeliverState(header abci.Header) {
-	ms := app.cms.CacheMultiStore()
-	app.deliverState = &state{
+	baseState := &state{
 		ms:  ms,
 		ctx: sdk.NewContext(ms, header, false, app.logger),
 	}
+
+	switch mode {
+	case runTxModeCheck:
+		// Minimum gas prices are also set. It is set on InitChain and reset on Commit.
+		baseState.ctx = baseState.ctx.WithIsCheckTx(true).WithMinGasPrices(app.minGasPrices)
+		app.checkState = baseState
+	case runTxModeDeliver:
+		// It is set on InitChain and BeginBlock and set to nil on Commit.
+		app.deliverState = baseState
+	case runTxPrepareProposal:
+		// It is set on InitChain and Commit.
+		app.prepareProposalState = baseState
+	case runTxProcessProposal:
+		// It is set on InitChain and Commit.
+		app.processProposalState = baseState
+	default:
+		panic(fmt.Sprintf("invalid runTxMode for setState: %d", mode))
+	}
 }
 
-// setConsensusParams memoizes the consensus params.
-func (app *BaseApp) setConsensusParams(consensusParams *abci.ConsensusParams) {
-	app.consensusParams = consensusParams
-}
+// GetConsensusParams returns the current consensus parameters from the BaseApp's
+// ParamStore. If the BaseApp has no ParamStore defined, nil is returned.
+func (app *BaseApp) GetConsensusParams(ctx sdk.Context) *cmtproto.ConsensusParams {
+	if app.paramStore == nil {
+		return nil
+	}
 
-// setConsensusParams stores the consensus params to the main store.
-func (app *BaseApp) storeConsensusParams(consensusParams *abci.ConsensusParams) {
-	consensusParamsBz, err := proto.Marshal(consensusParams)
+	cp, err := app.paramStore.Get(ctx)
 	if err != nil {
 		panic(err)
 	}
-	mainStore := app.cms.GetKVStore(app.baseKey)
-	mainStore.Set(mainConsensusParamsKey, consensusParamsBz)
+
+	return cp
 }
 
-// getMaximumBlockGas gets the maximum gas from the consensus params. It panics
+// StoreConsensusParams sets the consensus parameters to the baseapp's param store.
+func (app *BaseApp) StoreConsensusParams(ctx sdk.Context, cp *cmtproto.ConsensusParams) {
+	if app.paramStore == nil {
+		panic("cannot store consensus params with no params store set")
+	}
+
+	if cp == nil {
+		return
+	}
+
+	app.paramStore.Set(ctx, cp)
+	// We're explicitly not storing the CometBFT app_version in the param store. It's
+	// stored instead in the x/upgrade store, with its own bump logic.
+}
+
+// AddRunTxRecoveryHandler adds custom app.runTx method panic handlers.
+func (app *BaseApp) AddRunTxRecoveryHandler(handlers ...RecoveryHandler) {
+	for _, h := range handlers {
+		app.runTxRecoveryMiddleware = newRecoveryMiddleware(h, app.runTxRecoveryMiddleware)
+	}
+}
+
+// GetMaximumBlockGas gets the maximum gas from the consensus params. It panics
 // if maximum block gas is less than negative one and returns zero if negative
 // one.
-func (app *BaseApp) getMaximumBlockGas() uint64 {
-	if app.consensusParams == nil || app.consensusParams.Block == nil {
+func (app *BaseApp) GetMaximumBlockGas(ctx sdk.Context) uint64 {
+	cp := app.GetConsensusParams(ctx)
+	if cp == nil || cp.Block == nil {
 		return 0
 	}
 
-	maxGas := app.consensusParams.Block.MaxGas
+	maxGas := cp.Block.MaxGas
+
 	switch {
 	case maxGas < -1:
 		panic(fmt.Sprintf("invalid maximum block gas: %d", maxGas))
@@ -439,22 +499,35 @@ func (app *BaseApp) validateHeight(req abci.RequestBeginBlock) error {
 		return fmt.Errorf("invalid height: %d", req.Header.Height)
 	}
 
-	prevHeight := app.LastBlockHeight()
-	if req.Header.Height != prevHeight+1 {
-		return fmt.Errorf("invalid height: %d; expected: %d", req.Header.Height, prevHeight+1)
+	// expectedHeight holds the expected height to validate.
+	var expectedHeight int64
+	if app.LastBlockHeight() == 0 && app.initialHeight > 1 {
+		// In this case, we're validating the first block of the chain (no
+		// previous commit). The height we're expecting is the initial height.
+		expectedHeight = app.initialHeight
+	} else {
+		// This case can mean two things:
+		// - either there was already a previous commit in the store, in which
+		// case we increment the version from there,
+		// - or there was no previous commit, and initial version was not set,
+		// in which case we start at version 1.
+		expectedHeight = app.LastBlockHeight() + 1
+	}
+
+	if req.Header.Height != expectedHeight {
+		return fmt.Errorf("invalid height: %d; expected: %d", req.Header.Height, expectedHeight)
 	}
 
 	return nil
 }
 
 // validateBasicTxMsgs executes basic validator calls for messages.
-func validateBasicTxMsgs(msgs []sdk.Msg) sdk.Error {
+func validateBasicTxMsgs(msgs []sdk.Msg) error {
 	if len(msgs) == 0 {
-		return sdk.ErrUnknownRequest("Tx.GetMsgs() must return at least one message in list")
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "must contain at least one message")
 	}
 
 	for _, msg := range msgs {
-		// Validate the Msg.
 		err := msg.ValidateBasic()
 		if err != nil {
 			return err
@@ -464,57 +537,86 @@ func validateBasicTxMsgs(msgs []sdk.Msg) sdk.Error {
 	return nil
 }
 
-// Returns the applications's deliverState if app is in runTxModeDeliver,
-// otherwise it returns the application's checkstate.
+// Returns the application's deliverState if app is in runTxModeDeliver,
+// prepareProposalState if app is in runTxPrepareProposal, processProposalState
+// if app is in runTxProcessProposal, and checkState otherwise.
 func (app *BaseApp) getState(mode runTxMode) *state {
-	if mode == runTxModeCheck || mode == runTxModeSimulate {
+	switch mode {
+	case runTxModeDeliver:
+		return app.deliverState
+
+	case runTxPrepareProposal:
+		return app.prepareProposalState
+
+	case runTxProcessProposal:
+		return app.processProposalState
+
+	default:
 		return app.checkState
 	}
+}
 
-	return app.deliverState
+func (app *BaseApp) getBlockGasMeter(ctx sdk.Context) storetypes.GasMeter {
+	if maxGas := app.GetMaximumBlockGas(ctx); maxGas > 0 {
+		return storetypes.NewGasMeter(maxGas)
+	}
+
+	return storetypes.NewInfiniteGasMeter()
 }
 
 // retrieve the context for the tx w/ txBytes and other memoized values.
-func (app *BaseApp) getContextForTx(mode runTxMode, txBytes []byte) (ctx sdk.Context) {
-	ctx = app.getState(mode).ctx.
+func (app *BaseApp) getContextForTx(mode runTxMode, txBytes []byte) sdk.Context {
+	modeState := app.getState(mode)
+	if modeState == nil {
+		panic(fmt.Sprintf("state is nil for mode %v", mode))
+	}
+	ctx := modeState.ctx.
 		WithTxBytes(txBytes).
-		WithVoteInfos(app.voteInfos).
-		WithConsensusParams(app.consensusParams)
+		WithVoteInfos(app.voteInfos)
+
+	ctx = ctx.WithConsensusParams(app.GetConsensusParams(ctx))
+
+	if mode == runTxModeReCheck {
+		ctx = ctx.WithIsReCheckTx(true)
+	}
 
 	if mode == runTxModeSimulate {
 		ctx, _ = ctx.CacheContext()
 	}
 
-	return
+	return ctx
 }
 
 // cacheTxContext returns a new context based off of the provided context with
-// a cache wrapped multi-store.
-func (app *BaseApp) cacheTxContext(ctx sdk.Context, txBytes []byte) (sdk.Context, sdk.CacheMultiStore) {
+// a branched multi-store.
+func (app *BaseApp) cacheTxContext(ctx sdk.Context, txBytes []byte) (sdk.Context, storetypes.CacheMultiStore) {
 	ms := ctx.MultiStore()
 	// TODO: https://github.com/cosmos/cosmos-sdk/issues/2824
 	msCache := ms.CacheMultiStore()
 	if msCache.TracingEnabled() {
 		msCache = msCache.SetTracingContext(
-			sdk.TraceContext(
+			storetypes.TraceContext(
 				map[string]interface{}{
 					"txHash": fmt.Sprintf("%X", tmhash.Sum(txBytes)),
 				},
 			),
-		).(sdk.CacheMultiStore)
+		).(storetypes.CacheMultiStore)
 	}
 
 	return ctx.WithMultiStore(msCache), msCache
 }
 
-// runTx processes a transaction. The transactions is processed via an
-// anteHandler. The provided txBytes may be nil in some cases, eg. in tests. For
-// further details on transaction execution, reference the BaseApp SDK
-// documentation.
-func (app *BaseApp) runTx(mode runTxMode, txBytes []byte, tx sdk.Tx) (result sdk.Result) {
+// runTx processes a transaction within a given execution mode, encoded transaction
+// bytes, and the decoded transaction itself. All state transitions occur through
+// a cached Context depending on the mode provided. State only gets persisted
+// if all messages get executed successfully and the execution mode is DeliverTx.
+// Note, gas execution info is always returned. A reference to a Result is
+// returned if the tx does not run out of gas and if all the messages are valid
+// and execute successfully. An error is returned otherwise.
+func (app *BaseApp) runTx(mode runTxMode, txBytes []byte) (gInfo sdk.GasInfo, result *sdk.Result, anteEvents []abci.Event, priority int64, err error) {
 	// NOTE: GasWanted should be returned by the AnteHandler. GasUsed is
 	// determined by the GasMeter. We need access to the context to get the gas
-	// meter so we initialize upfront.
+	// meter, so we initialize upfront.
 	var gasWanted uint64
 
 	ctx := app.getContextForTx(mode, txBytes)
@@ -522,175 +624,347 @@ func (app *BaseApp) runTx(mode runTxMode, txBytes []byte, tx sdk.Tx) (result sdk
 
 	// only run the tx if there is block gas remaining
 	if mode == runTxModeDeliver && ctx.BlockGasMeter().IsOutOfGas() {
-		return sdk.ErrOutOfGas("no block gas left to run tx").Result()
-	}
-
-	var startingGas uint64
-	if mode == runTxModeDeliver {
-		startingGas = ctx.BlockGasMeter().GasConsumed()
+		return gInfo, nil, nil, 0, errorsmod.Wrap(sdkerrors.ErrOutOfGas, "no block gas left to run tx")
 	}
 
 	defer func() {
 		if r := recover(); r != nil {
-			switch rType := r.(type) {
-			case sdk.ErrorOutOfGas:
-				log := fmt.Sprintf(
-					"out of gas in location: %v; gasWanted: %d, gasUsed: %d",
-					rType.Descriptor, gasWanted, ctx.GasMeter().GasConsumed(),
-				)
-				result = sdk.ErrOutOfGas(log).Result()
-			default:
-				log := fmt.Sprintf("recovered: %v\nstack:\n%v", r, string(debug.Stack()))
-				result = sdk.ErrInternal(log).Result()
-			}
+			recoveryMW := newOutOfGasRecoveryMiddleware(gasWanted, ctx, app.runTxRecoveryMiddleware)
+			err, result = processRecovery(r, recoveryMW), nil
 		}
 
-		result.GasWanted = gasWanted
-		result.GasUsed = ctx.GasMeter().GasConsumed()
+		gInfo = sdk.GasInfo{GasWanted: gasWanted, GasUsed: ctx.GasMeter().GasConsumed()}
 	}()
+
+	blockGasConsumed := false
+
+	// consumeBlockGas makes sure block gas is consumed at most once. It must
+	// happen after tx processing, and must be executed even if tx processing
+	// fails. Hence, it's execution is deferred.
+	consumeBlockGas := func() {
+		if !blockGasConsumed {
+			blockGasConsumed = true
+			ctx.BlockGasMeter().ConsumeGas(
+				ctx.GasMeter().GasConsumedToLimit(), "block gas meter",
+			)
+		}
+	}
 
 	// If BlockGasMeter() panics it will be caught by the above recover and will
 	// return an error - in any case BlockGasMeter will consume gas past the limit.
 	//
-	// NOTE: This must exist in a separate defer function for the above recovery
-	// to recover from this one.
-	defer func() {
-		if mode == runTxModeDeliver {
-			ctx.BlockGasMeter().ConsumeGas(
-				ctx.GasMeter().GasConsumedToLimit(),
-				"block gas meter",
-			)
+	// NOTE: consumeBlockGas must exist in a separate defer function from the
+	// general deferred recovery function to recover from consumeBlockGas as it'll
+	// be executed first (deferred statements are executed as stack).
+	if mode == runTxModeDeliver {
+		defer consumeBlockGas()
+	}
 
-			if ctx.BlockGasMeter().GasConsumed() < startingGas {
-				panic(sdk.ErrorGasOverflow{Descriptor: "tx gas summation"})
-			}
-		}
-	}()
+	tx, err := app.txDecoder(txBytes)
+	if err != nil {
+		return sdk.GasInfo{}, nil, nil, 0, err
+	}
 
-	var msgs = tx.GetMsgs()
+	msgs := tx.GetMsgs()
 	if err := validateBasicTxMsgs(msgs); err != nil {
-		return err.Result()
+		return sdk.GasInfo{}, nil, nil, 0, err
 	}
 
 	if app.anteHandler != nil {
-		var anteCtx sdk.Context
-		var msCache sdk.CacheMultiStore
+		var (
+			anteCtx sdk.Context
+			msCache storetypes.CacheMultiStore
+		)
 
-		// Cache wrap context before anteHandler call in case it aborts.
+		// Branch context before AnteHandler call in case it aborts.
 		// This is required for both CheckTx and DeliverTx.
 		// Ref: https://github.com/cosmos/cosmos-sdk/issues/2772
 		//
-		// NOTE: Alternatively, we could require that anteHandler ensures that
+		// NOTE: Alternatively, we could require that AnteHandler ensures that
 		// writes do not happen if aborted/failed.  This may have some
 		// performance benefits, but it'll be more difficult to get right.
 		anteCtx, msCache = app.cacheTxContext(ctx, txBytes)
-
+		anteCtx = anteCtx.WithEventManager(sdk.NewEventManager())
 		newCtx, err := app.anteHandler(anteCtx, tx, mode == runTxModeSimulate)
+
 		if !newCtx.IsZero() {
-			// At this point, newCtx.MultiStore() is cache-wrapped, or something else
-			// replaced by the ante handler. We want the original multistore, not one
-			// which was cache-wrapped for the ante handler.
+			// At this point, newCtx.MultiStore() is a store branch, or something else
+			// replaced by the AnteHandler. We want the original multistore.
 			//
 			// Also, in the case of the tx aborting, we need to track gas consumed via
-			// the instantiated gas meter in the ante handler, so we update the context
+			// the instantiated gas meter in the AnteHandler, so we update the context
 			// prior to returning.
 			ctx = newCtx.WithMultiStore(ms)
 		}
+
+		events := ctx.EventManager().Events()
 
 		// GasMeter expected to be set in AnteHandler
 		gasWanted = ctx.GasMeter().Limit()
 
 		if err != nil {
-			res := sdk.ResultFromError(err)
-			res.GasWanted = gasWanted
-			res.GasUsed = ctx.GasMeter().GasConsumed()
-			return res
+			return gInfo, nil, nil, 0, err
 		}
 
+		priority = ctx.Priority()
 		msCache.Write()
+		anteEvents = events.ToABCIEvents()
 	}
 
-	// Create a new Context based off of the existing Context with a cache-wrapped
-	// MultiStore in case message processing fails. At this point, the MultiStore
-	// is doubly cached-wrapped.
+	if mode == runTxModeCheck {
+		err = app.mempool.Insert(ctx, tx)
+		if err != nil {
+			return gInfo, nil, anteEvents, priority, err
+		}
+	} else if mode == runTxModeDeliver {
+		err = app.mempool.Remove(tx)
+		if err != nil && !errors.Is(err, mempool.ErrTxNotFound) {
+			return gInfo, nil, anteEvents, priority,
+				fmt.Errorf("failed to remove tx from mempool: %w", err)
+		}
+	}
+
+	// Create a new Context based off of the existing Context with a MultiStore branch
+	// in case message processing fails. At this point, the MultiStore
+	// is a branch of a branch.
 	runMsgCtx, msCache := app.cacheTxContext(ctx, txBytes)
-	result = app.runMsgs(runMsgCtx, msgs, mode)
-	result.GasWanted = gasWanted
 
-	// Safety check: don't write the cache state unless we're in DeliverTx.
-	if mode != runTxModeDeliver {
-		return result
+	// Attempt to execute all messages and only update state if all messages pass
+	// and we're in DeliverTx. Note, runMsgs will never return a reference to a
+	// Result if any single message fails or does not have a registered Handler.
+	result, err = app.runMsgs(runMsgCtx, msgs, mode)
+	if err == nil {
+		// Run optional postHandlers.
+		//
+		// Note: If the postHandler fails, we also revert the runMsgs state.
+		if app.postHandler != nil {
+			// The runMsgCtx context currently contains events emitted by the ante handler.
+			// We clear this to correctly order events without duplicates.
+			// Note that the state is still preserved.
+			postCtx := runMsgCtx.WithEventManager(sdk.NewEventManager())
+
+			newCtx, err := app.postHandler(postCtx, tx, mode == runTxModeSimulate, err == nil)
+			if err != nil {
+				return gInfo, nil, anteEvents, priority, err
+			}
+
+			result.Events = append(result.Events, newCtx.EventManager().ABCIEvents()...)
+		}
+
+		if mode == runTxModeDeliver {
+			// When block gas exceeds, it'll panic and won't commit the cached store.
+			consumeBlockGas()
+
+			msCache.Write()
+		}
+
+		if len(anteEvents) > 0 && (mode == runTxModeDeliver || mode == runTxModeSimulate) {
+			// append the events in the order of occurrence
+			result.Events = append(anteEvents, result.Events...)
+		}
 	}
 
-	// only update state if all messages pass
-	if result.IsOK() {
-		msCache.Write()
-	}
-
-	return result
+	return gInfo, result, anteEvents, priority, err
 }
 
-// runMsgs iterates through all the messages and executes them.
-func (app *BaseApp) runMsgs(ctx sdk.Context, msgs []sdk.Msg, mode runTxMode) (result sdk.Result) {
+// runMsgs iterates through a list of messages and executes them with the provided
+// Context and execution mode. Messages will only be executed during simulation
+// and DeliverTx. An error is returned if any single message fails or if a
+// Handler does not exist for a given message route. Otherwise, a reference to a
+// Result is returned. The caller must not commit state if an error is returned.
+func (app *BaseApp) runMsgs(ctx sdk.Context, msgs []sdk.Msg, mode runTxMode) (*sdk.Result, error) {
 	msgLogs := make(sdk.ABCIMessageLogs, 0, len(msgs))
-
-	data := make([]byte, 0, len(msgs))
-	var (
-		code      sdk.CodeType
-		codespace sdk.CodespaceType
-	)
-
 	events := sdk.EmptyEvents()
+	var msgResponses []*codectypes.Any
 
-	// NOTE: GasWanted is determined by ante handler and GasUsed by the GasMeter.
+	// NOTE: GasWanted is determined by the AnteHandler and GasUsed by the GasMeter.
 	for i, msg := range msgs {
-		// match message route
-		msgRoute := msg.Route()
-		handler := app.router.Route(msgRoute)
-		if handler == nil {
-			return sdk.ErrUnknownRequest("unrecognized message type: " + msgRoute).Result()
-		}
-
-		var msgResult sdk.Result
-
-		// skip actual execution for CheckTx mode
-		if mode != runTxModeCheck {
-			msgResult = handler(ctx, msg)
-		}
-
-		// Each message result's Data must be length prefixed in order to separate
-		// each result.
-		data = append(data, msgResult.Data...)
-
-		msgEvents := msgResult.Events
-
-		// append events from the message's execution and a message action event
-		msgEvents = msgEvents.AppendEvent(
-			sdk.NewEvent(sdk.EventTypeMessage, sdk.NewAttribute(sdk.AttributeKeyAction, msg.Type())),
-		)
-
-		events = events.AppendEvents(msgEvents)
-
-		// stop execution and return on first failed message
-		if !msgResult.IsOK() {
-			msgLogs = append(msgLogs, sdk.NewABCIMessageLog(uint16(i), false, msgResult.Log, msgEvents))
-
-			code = msgResult.Code
-			codespace = msgResult.Codespace
+		if mode != runTxModeDeliver && mode != runTxModeSimulate {
 			break
 		}
 
-		msgLogs = append(msgLogs, sdk.NewABCIMessageLog(uint16(i), true, msgResult.Log, msgEvents))
+		handler := app.msgServiceRouter.Handler(msg)
+		if handler == nil {
+			return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "can't route message %+v", msg)
+		}
+
+		// ADR 031 request type routing
+		msgResult, err := handler(ctx, msg)
+		if err != nil {
+			return nil, errorsmod.Wrapf(err, "failed to execute message; message index: %d", i)
+		}
+
+		// create message events
+		msgEvents := createEvents(msgResult.GetEvents(), msg)
+
+		// append message events, data and logs
+		//
+		// Note: Each message result's data must be length-prefixed in order to
+		// separate each result.
+		events = events.AppendEvents(msgEvents)
+
+		// Each individual sdk.Result that went through the MsgServiceRouter
+		// (which should represent 99% of the Msgs now, since everyone should
+		// be using protobuf Msgs) has exactly one Msg response, set inside
+		// `WrapServiceResult`. We take that Msg response, and aggregate it
+		// into an array.
+		if len(msgResult.MsgResponses) > 0 {
+			msgResponse := msgResult.MsgResponses[0]
+			if msgResponse == nil {
+				return nil, sdkerrors.ErrLogic.Wrapf("got nil Msg response at index %d for msg %s", i, sdk.MsgTypeURL(msg))
+			}
+			msgResponses = append(msgResponses, msgResponse)
+		}
+
+		msgLogs = append(msgLogs, sdk.NewABCIMessageLog(uint32(i), msgResult.Log, msgEvents))
 	}
 
-	result = sdk.Result{
-		Code:      code,
-		Codespace: codespace,
-		Data:      data,
-		Log:       strings.TrimSpace(msgLogs.String()),
-		GasUsed:   ctx.GasMeter().GasConsumed(),
-		Events:    events,
+	data, err := makeABCIData(msgResponses)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "failed to marshal tx data")
 	}
 
-	return result
+	return &sdk.Result{
+		Data:         data,
+		Log:          strings.TrimSpace(msgLogs.String()),
+		Events:       events.ToABCIEvents(),
+		MsgResponses: msgResponses,
+	}, nil
+}
+
+// makeABCIData generates the Data field to be sent to ABCI Check/DeliverTx.
+func makeABCIData(msgResponses []*codectypes.Any) ([]byte, error) {
+	return proto.Marshal(&sdk.TxMsgData{MsgResponses: msgResponses})
+}
+
+func createEvents(events sdk.Events, msg sdk.Msg) sdk.Events {
+	eventMsgName := sdk.MsgTypeURL(msg)
+	msgEvent := sdk.NewEvent(sdk.EventTypeMessage, sdk.NewAttribute(sdk.AttributeKeyAction, eventMsgName))
+
+	// we set the signer attribute as the sender
+	if len(msg.GetSigners()) > 0 && !msg.GetSigners()[0].Empty() {
+		msgEvent = msgEvent.AppendAttributes(sdk.NewAttribute(sdk.AttributeKeySender, msg.GetSigners()[0].String()))
+	}
+
+	// verify that events have no module attribute set
+	if _, found := events.GetAttributes(sdk.AttributeKeyModule); !found {
+		if moduleName := sdk.GetModuleNameFromTypeURL(eventMsgName); moduleName != "" {
+			msgEvent = msgEvent.AppendAttributes(sdk.NewAttribute(sdk.AttributeKeyModule, moduleName))
+		}
+	}
+
+	return sdk.Events{msgEvent}.AppendEvents(events)
+}
+
+// DefaultPrepareProposal returns the default implementation for processing an
+// ABCI proposal. The application's mempool is enumerated and all valid
+// transactions are added to the proposal. Transactions are valid if they:
+//
+// 1) Successfully encode to bytes.
+// 2) Are valid (i.e. pass runTx, AnteHandler only).
+//
+// Enumeration is halted once RequestPrepareProposal.MaxBytes of transactions is
+// reached or the mempool is exhausted.
+//
+// Note:
+//
+// - Step (2) is identical to the validation step performed in
+// DefaultProcessProposal. It is very important that the same validation logic
+// is used in both steps, and applications must ensure that this is the case in
+// non-default handlers.
+//
+// - If no mempool is set or if the mempool is a no-op mempool, the transactions
+// requested from CometBFT will simply be returned, which, by default, are in
+// FIFO order.
+func (app *BaseApp) DefaultPrepareProposal() sdk.PrepareProposalHandler {
+	return func(ctx sdk.Context, req abci.RequestPrepareProposal) abci.ResponsePrepareProposal {
+		// If the mempool is nil or a no-op mempool, we simply return the transactions
+		// requested from CometBFT, which, by default, should be in FIFO order.
+		_, isNoOp := app.mempool.(mempool.NoOpMempool)
+		if app.mempool == nil || isNoOp {
+			return abci.ResponsePrepareProposal{Txs: req.Txs}
+		}
+
+		var (
+			txsBytes  [][]byte
+			byteCount int64
+		)
+
+		iterator := app.mempool.Select(ctx, req.Txs)
+		for iterator != nil {
+			memTx := iterator.Tx()
+
+			bz, err := app.txEncoder(memTx)
+			if err != nil {
+				panic(err)
+			}
+
+			txSize := int64(len(bz))
+
+			// NOTE: Since runTx was already executed in CheckTx, which calls
+			// mempool.Insert, ideally everything in the pool should be valid. But
+			// some mempool implementations may insert invalid txs, so we check again.
+			_, _, _, _, err = app.runTx(runTxPrepareProposal, bz)
+			if err != nil {
+				err := app.mempool.Remove(memTx)
+				if err != nil && !errors.Is(err, mempool.ErrTxNotFound) {
+					panic(err)
+				}
+
+				iterator = iterator.Next()
+				continue
+			} else if byteCount += txSize; byteCount <= req.MaxTxBytes {
+				txsBytes = append(txsBytes, bz)
+			} else {
+				break
+			}
+
+			iterator = iterator.Next()
+		}
+
+		return abci.ResponsePrepareProposal{Txs: txsBytes}
+	}
+}
+
+// DefaultProcessProposal returns the default implementation for processing an ABCI proposal.
+// Every transaction in the proposal must pass 2 conditions:
+//
+// 1. The transaction bytes must decode to a valid transaction.
+// 2. The transaction must be valid (i.e. pass runTx, AnteHandler only)
+//
+// If any transaction fails to pass either condition, the proposal is rejected.  Note that step (2) is identical to the
+// validation step performed in DefaultPrepareProposal.  It is very important that the same validation logic is used
+// in both steps, and applications must ensure that this is the case in non-default handlers.
+func (app *BaseApp) DefaultProcessProposal() sdk.ProcessProposalHandler {
+	return func(ctx sdk.Context, req abci.RequestProcessProposal) abci.ResponseProcessProposal {
+		for _, txBytes := range req.Txs {
+			_, err := app.txDecoder(txBytes)
+			if err != nil {
+				return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}
+			}
+
+			_, _, _, _, err = app.runTx(runTxProcessProposal, txBytes)
+			if err != nil {
+				return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}
+			}
+		}
+
+		return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}
+	}
+}
+
+// NoOpPrepareProposal defines a no-op PrepareProposal handler. It will always
+// return the transactions sent by the client's request.
+func NoOpPrepareProposal() sdk.PrepareProposalHandler {
+	return func(_ sdk.Context, req abci.RequestPrepareProposal) abci.ResponsePrepareProposal {
+		return abci.ResponsePrepareProposal{Txs: req.Txs}
+	}
+}
+
+// NoOpProcessProposal defines a no-op ProcessProposal Handler. It will always
+// return ACCEPT.
+func NoOpProcessProposal() sdk.ProcessProposalHandler {
+	return func(_ sdk.Context, _ abci.RequestProcessProposal) abci.ResponseProcessProposal {
+		return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}
+	}
 }

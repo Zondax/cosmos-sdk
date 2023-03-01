@@ -1,16 +1,23 @@
-package simulation
+package simulation_test
 
 import (
 	"fmt"
 	"testing"
 
+	gogotypes "github.com/cosmos/gogoproto/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tendermint/tendermint/crypto/ed25519"
-	cmn "github.com/tendermint/tendermint/libs/common"
+	"cosmossdk.io/depinject"
 
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/kv"
+	"github.com/cosmos/cosmos-sdk/x/auth/simulation"
+	"github.com/cosmos/cosmos-sdk/x/auth/testutil"
+
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
@@ -19,23 +26,41 @@ var (
 	delAddr1 = sdk.AccAddress(delPk1.Address())
 )
 
-func makeTestCodec() (cdc *codec.Codec) {
-	cdc = codec.New()
-	sdk.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
-	types.RegisterCodec(cdc)
-	return
-}
-
 func TestDecodeStore(t *testing.T) {
-	cdc := makeTestCodec()
-	acc := types.NewBaseAccountWithAddress(delAddr1)
-	globalAccNumber := uint64(10)
+	var (
+		cdc           codec.Codec
+		accountKeeper authkeeper.AccountKeeper
+	)
+	err := depinject.Inject(testutil.AppConfig, &cdc, &accountKeeper)
+	require.NoError(t, err)
 
-	kvPairs := cmn.KVPairs{
-		cmn.KVPair{Key: types.AddressStoreKey(delAddr1), Value: cdc.MustMarshalBinaryBare(acc)},
-		cmn.KVPair{Key: types.GlobalAccountNumberKey, Value: cdc.MustMarshalBinaryLengthPrefixed(globalAccNumber)},
-		cmn.KVPair{Key: []byte{0x99}, Value: []byte{0x99}},
+	acc := types.NewBaseAccountWithAddress(delAddr1)
+	dec := simulation.NewDecodeStore(accountKeeper)
+
+	accBz, err := accountKeeper.MarshalAccount(acc)
+	require.NoError(t, err)
+
+	globalAccNumber := gogotypes.UInt64Value{Value: 10}
+
+	kvPairs := kv.Pairs{
+		Pairs: []kv.Pair{
+			{
+				Key:   types.AddressStoreKey(delAddr1),
+				Value: accBz,
+			},
+			{
+				Key:   types.GlobalAccountNumberKey,
+				Value: cdc.MustMarshal(&globalAccNumber),
+			},
+			{
+				Key:   types.AccountNumberStoreKey(5),
+				Value: acc.GetAddress().Bytes(),
+			},
+			{
+				Key:   []byte{0x99},
+				Value: []byte{0x99},
+			},
+		},
 	}
 	tests := []struct {
 		name        string
@@ -43,6 +68,7 @@ func TestDecodeStore(t *testing.T) {
 	}{
 		{"Account", fmt.Sprintf("%v\n%v", acc, acc)},
 		{"GlobalAccNumber", fmt.Sprintf("GlobalAccNumberA: %d\nGlobalAccNumberB: %d", globalAccNumber, globalAccNumber)},
+		{"AccNum", fmt.Sprintf("AccNumA: %s\nAccNumB: %s", acc.GetAddress(), acc.GetAddress())},
 		{"other", ""},
 	}
 
@@ -51,9 +77,9 @@ func TestDecodeStore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			switch i {
 			case len(tests) - 1:
-				require.Panics(t, func() { DecodeStore(cdc, kvPairs[i], kvPairs[i]) }, tt.name)
+				require.Panics(t, func() { dec(kvPairs.Pairs[i], kvPairs.Pairs[i]) }, tt.name)
 			default:
-				require.Equal(t, tt.expectedLog, DecodeStore(cdc, kvPairs[i], kvPairs[i]), tt.name)
+				require.Equal(t, tt.expectedLog, dec(kvPairs.Pairs[i], kvPairs.Pairs[i]), tt.name)
 			}
 		})
 	}

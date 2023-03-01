@@ -1,16 +1,14 @@
 package simulation
 
-// DONTCOVER
-
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-
+	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/cosmos/cosmos-sdk/x/mint/internal/types"
+	"github.com/cosmos/cosmos-sdk/x/mint/types"
 )
 
 // Simulation parameter constants
@@ -23,27 +21,27 @@ const (
 )
 
 // GenInflation randomized Inflation
-func GenInflation(r *rand.Rand) sdk.Dec {
+func GenInflation(r *rand.Rand) math.LegacyDec {
 	return sdk.NewDecWithPrec(int64(r.Intn(99)), 2)
 }
 
 // GenInflationRateChange randomized InflationRateChange
-func GenInflationRateChange(r *rand.Rand) sdk.Dec {
+func GenInflationRateChange(r *rand.Rand) math.LegacyDec {
 	return sdk.NewDecWithPrec(int64(r.Intn(99)), 2)
 }
 
 // GenInflationMax randomized InflationMax
-func GenInflationMax(r *rand.Rand) sdk.Dec {
+func GenInflationMax(r *rand.Rand) math.LegacyDec {
 	return sdk.NewDecWithPrec(20, 2)
 }
 
 // GenInflationMin randomized InflationMin
-func GenInflationMin(r *rand.Rand) sdk.Dec {
+func GenInflationMin(r *rand.Rand) math.LegacyDec {
 	return sdk.NewDecWithPrec(7, 2)
 }
 
 // GenGoalBonded randomized GoalBonded
-func GenGoalBonded(r *rand.Rand) sdk.Dec {
+func GenGoalBonded(r *rand.Rand) math.LegacyDec {
 	return sdk.NewDecWithPrec(67, 2)
 }
 
@@ -81,12 +79,16 @@ func RandomizedGenState(simState *module.SimulationState) {
 		func(r *rand.Rand) { goalBonded = GenGoalBonded(r) },
 	)
 
-	mintDenom := sdk.DefaultBondDenom
+	mintDenom := simState.BondDenom
 	blocksPerYear := uint64(60 * 60 * 8766 / 5)
 	params := types.NewParams(mintDenom, inflationRateChange, inflationMax, inflationMin, goalBonded, blocksPerYear)
 
 	mintGenesis := types.NewGenesisState(types.InitialMinter(inflation), params)
 
-	fmt.Printf("Selected randomly generated minting parameters:\n%s\n", codec.MustMarshalJSONIndent(simState.Cdc, mintGenesis))
+	bz, err := json.MarshalIndent(&mintGenesis, "", " ")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Selected randomly generated minting parameters:\n%s\n", bz)
 	simState.GenState[types.ModuleName] = simState.Cdc.MustMarshalJSON(mintGenesis)
 }

@@ -1,57 +1,20 @@
 package types
 
 import (
-	"bytes"
-
-	cmn "github.com/tendermint/tendermint/libs/common"
+	"encoding/binary"
+	"fmt"
+	"sort"
+	"strings"
 )
 
-// Iterator over all the keys with a certain prefix in ascending order
+// KVStorePrefixIterator iterates over all the keys with a certain prefix in ascending order
 func KVStorePrefixIterator(kvs KVStore, prefix []byte) Iterator {
 	return kvs.Iterator(prefix, PrefixEndBytes(prefix))
 }
 
-// Iterator over all the keys with a certain prefix in descending order.
+// KVStoreReversePrefixIterator iterates over all the keys with a certain prefix in descending order.
 func KVStoreReversePrefixIterator(kvs KVStore, prefix []byte) Iterator {
 	return kvs.ReverseIterator(prefix, PrefixEndBytes(prefix))
-}
-
-// DiffKVStores compares two KVstores and returns all the key/value pairs
-// that differ from one another. It also skips value comparison for a set of provided prefixes
-func DiffKVStores(a KVStore, b KVStore, prefixesToSkip [][]byte) (kvAs, kvBs []cmn.KVPair) {
-	iterA := a.Iterator(nil, nil)
-	iterB := b.Iterator(nil, nil)
-
-	for {
-		if !iterA.Valid() && !iterB.Valid() {
-			break
-		}
-		var kvA, kvB cmn.KVPair
-		if iterA.Valid() {
-			kvA = cmn.KVPair{Key: iterA.Key(), Value: iterA.Value()}
-			iterA.Next()
-		}
-		if iterB.Valid() {
-			kvB = cmn.KVPair{Key: iterB.Key(), Value: iterB.Value()}
-			iterB.Next()
-		}
-		if !bytes.Equal(kvA.Key, kvB.Key) {
-			kvAs = append(kvAs, kvA)
-			kvBs = append(kvBs, kvB)
-		}
-		compareValue := true
-		for _, prefix := range prefixesToSkip {
-			// Skip value comparison if we matched a prefix
-			if bytes.Equal(kvA.Key[:len(prefix)], prefix) {
-				compareValue = false
-			}
-		}
-		if compareValue && !bytes.Equal(kvA.Value, kvB.Value) {
-			kvAs = append(kvAs, kvA)
-			kvBs = append(kvBs, kvB)
-		}
-	}
-	return kvAs, kvBs
 }
 
 // PrefixEndBytes returns the []byte that would end a
@@ -69,14 +32,16 @@ func PrefixEndBytes(prefix []byte) []byte {
 		if end[len(end)-1] != byte(255) {
 			end[len(end)-1]++
 			break
-		} else {
-			end = end[:len(end)-1]
-			if len(end) == 0 {
-				end = nil
-				break
-			}
+		}
+
+		end = end[:len(end)-1]
+
+		if len(end) == 0 {
+			end = nil
+			break
 		}
 	}
+
 	return end
 }
 
@@ -86,12 +51,44 @@ func InclusiveEndBytes(inclusiveBytes []byte) []byte {
 	return append(inclusiveBytes, byte(0x00))
 }
 
-//----------------------------------------
-func Cp(bz []byte) (ret []byte) {
-	if bz == nil {
-		return nil
+// assertNoCommonPrefix will panic if there are two keys: k1 and k2 in keys, such that
+// k1 is a prefix of k2
+func assertNoCommonPrefix(keys []string) {
+	sorted := make([]string, len(keys))
+	copy(sorted, keys)
+	sort.Strings(sorted)
+	for i := 1; i < len(sorted); i++ {
+		if strings.HasPrefix(sorted[i], sorted[i-1]) {
+			panic(fmt.Sprint("Potential key collision between KVStores:", sorted[i], " - ", sorted[i-1]))
+		}
 	}
-	ret = make([]byte, len(bz))
-	copy(ret, bz)
-	return ret
+}
+
+// Uint64ToBigEndian - marshals uint64 to a bigendian byte slice so it can be sorted
+func Uint64ToBigEndian(i uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, i)
+	return b
+}
+
+// BigEndianToUint64 returns an uint64 from big endian encoded bytes. If encoding
+// is empty, zero is returned.
+func BigEndianToUint64(bz []byte) uint64 {
+	if len(bz) == 0 {
+		return 0
+	}
+
+	return binary.BigEndian.Uint64(bz)
+}
+
+// SliceContains implements a generic function for checking if a slice contains
+// a certain value.
+func SliceContains[T comparable](elements []T, v T) bool {
+	for _, s := range elements {
+		if v == s {
+			return true
+		}
+	}
+
+	return false
 }

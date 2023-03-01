@@ -1,50 +1,51 @@
 package server
 
-// DONTCOVER
-
 import (
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	tmtypes "github.com/tendermint/tendermint/types"
-	dbm "github.com/tendermint/tm-db"
 
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/server/types"
+	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 )
 
 const (
-	flagHeight        = "height"
-	flagForZeroHeight = "for-zero-height"
-	flagJailWhitelist = "jail-whitelist"
+	FlagHeight           = "height"
+	FlagForZeroHeight    = "for-zero-height"
+	FlagJailAllowedAddrs = "jail-allowed-addrs"
+	FlagModulesToExport  = "modules-to-export"
 )
 
 // ExportCmd dumps app state to JSON.
-func ExportCmd(ctx *Context, cdc *codec.Codec, appExporter AppExporter) *cobra.Command {
+func ExportCmd(appExporter types.AppExporter, defaultNodeHome string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export state to JSON",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			config := ctx.Config
-			config.SetRoot(viper.GetString(flags.FlagHome))
+			serverCtx := GetServerContextFromCmd(cmd)
+			config := serverCtx.Config
 
-			traceWriterFile := viper.GetString(flagTraceStore)
+			homeDir, _ := cmd.Flags().GetString(flags.FlagHome)
+			config.SetRoot(homeDir)
 
-			db, err := openDB(config.RootDir)
+			if _, err := os.Stat(config.GenesisFile()); os.IsNotExist(err) {
+				return err
+			}
+
+			db, err := openDB(config.RootDir, GetAppDBBackend(serverCtx.Viper))
 			if err != nil {
 				return err
 			}
 
-			if isEmptyState(db) || appExporter == nil {
-				if _, err := fmt.Fprintln(os.Stderr, "WARNING: State is not initialized. Returning genesis file."); err != nil {
+			if appExporter == nil {
+				if _, err := fmt.Fprintln(os.Stderr, "WARNING: App exporter not defined. Returning genesis file."); err != nil {
 					return err
 				}
 
-				genesis, err := ioutil.ReadFile(config.GenesisFile())
+				genesis, err := os.ReadFile(config.GenesisFile())
 				if err != nil {
 					return err
 				}
@@ -53,44 +54,59 @@ func ExportCmd(ctx *Context, cdc *codec.Codec, appExporter AppExporter) *cobra.C
 				return nil
 			}
 
+			traceWriterFile, _ := cmd.Flags().GetString(flagTraceStore)
 			traceWriter, err := openTraceWriter(traceWriterFile)
 			if err != nil {
 				return err
 			}
 
-			height := viper.GetInt64(flagHeight)
-			forZeroHeight := viper.GetBool(flagForZeroHeight)
-			jailWhiteList := viper.GetStringSlice(flagJailWhitelist)
+			height, _ := cmd.Flags().GetInt64(FlagHeight)
+			forZeroHeight, _ := cmd.Flags().GetBool(FlagForZeroHeight)
+			jailAllowedAddrs, _ := cmd.Flags().GetStringSlice(FlagJailAllowedAddrs)
+			modulesToExport, _ := cmd.Flags().GetStringSlice(FlagModulesToExport)
+			outputDocument, _ := cmd.Flags().GetString(flags.FlagOutputDocument)
 
-			appState, validators, err := appExporter(ctx.Logger, db, traceWriter, height, forZeroHeight, jailWhiteList)
+			exported, err := appExporter(serverCtx.Logger, db, traceWriter, height, forZeroHeight, jailAllowedAddrs, serverCtx.Viper, modulesToExport)
 			if err != nil {
 				return fmt.Errorf("error exporting state: %v", err)
 			}
 
-			doc, err := tmtypes.GenesisDocFromFile(ctx.Config.GenesisFile())
+			appGenesis, err := genutiltypes.AppGenesisFromFile(serverCtx.Config.GenesisFile())
 			if err != nil {
 				return err
 			}
 
-			doc.AppState = appState
-			doc.Validators = validators
+			appGenesis.AppState = exported.AppState
+			appGenesis.InitialHeight = exported.Height
+			appGenesis.Consensus = genutiltypes.NewConsensusGenesis(exported.ConsensusParams, exported.Validators)
 
-			encoded, err := codec.MarshalJSONIndent(cdc, doc)
+			out, err := json.Marshal(appGenesis)
 			if err != nil {
 				return err
 			}
 
-			fmt.Println(string(sdk.MustSortJSON(encoded)))
+			cmd.SetOut(cmd.OutOrStdout())
+			cmd.SetErr(cmd.OutOrStderr())
+
+			if outputDocument == "" {
+				cmd.Println(string(out))
+				return nil
+			}
+
+			if err = appGenesis.SaveAs(outputDocument); err != nil {
+				return err
+			}
+
 			return nil
 		},
 	}
 
-	cmd.Flags().Int64(flagHeight, -1, "Export state from a particular height (-1 means latest height)")
-	cmd.Flags().Bool(flagForZeroHeight, false, "Export state to start at height zero (perform preproccessing)")
-	cmd.Flags().StringSlice(flagJailWhitelist, []string{}, "List of validators to not jail state export")
-	return cmd
-}
+	cmd.Flags().String(flags.FlagHome, defaultNodeHome, "The application home directory")
+	cmd.Flags().Int64(FlagHeight, -1, "Export state from a particular height (-1 means latest height)")
+	cmd.Flags().Bool(FlagForZeroHeight, false, "Export state to start at height zero (perform preproccessing)")
+	cmd.Flags().StringSlice(FlagJailAllowedAddrs, []string{}, "Comma-separated list of operator addresses of jailed validators to unjail")
+	cmd.Flags().StringSlice(FlagModulesToExport, []string{}, "Comma-separated list of modules to export. If empty, will export all modules")
+	cmd.Flags().String(flags.FlagOutputDocument, "", "Exported state is written to the given file instead of STDOUT")
 
-func isEmptyState(db dbm.DB) bool {
-	return db.Stats()["leveldb.sstables"] == ""
+	return cmd
 }

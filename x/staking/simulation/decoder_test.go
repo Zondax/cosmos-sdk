@@ -1,17 +1,18 @@
-package simulation
+package simulation_test
 
 import (
 	"fmt"
 	"testing"
 	"time"
 
+	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tendermint/tendermint/crypto/ed25519"
-	cmn "github.com/tendermint/tendermint/libs/common"
-
-	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/kv"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/staking/simulation"
 	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -21,39 +22,34 @@ var (
 	valAddr1 = sdk.ValAddress(delPk1.Address())
 )
 
-func makeTestCodec() (cdc *codec.Codec) {
-	cdc = codec.New()
-	sdk.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
-	types.RegisterCodec(cdc)
-	return
-}
-
 func TestDecodeStore(t *testing.T) {
-	cdc := makeTestCodec()
-
+	cdc := testutil.MakeTestEncodingConfig().Codec
+	dec := simulation.NewDecodeStore(cdc)
 	bondTime := time.Now().UTC()
 
-	val := types.NewValidator(valAddr1, delPk1, types.NewDescription("test", "test", "test", "test", "test"))
-	del := types.NewDelegation(delAddr1, valAddr1, sdk.OneDec())
-	ubd := types.NewUnbondingDelegation(delAddr1, valAddr1, 15, bondTime, sdk.OneInt())
-	red := types.NewRedelegation(delAddr1, valAddr1, valAddr1, 12, bondTime, sdk.OneInt(), sdk.OneDec())
+	val, err := types.NewValidator(valAddr1, delPk1, types.NewDescription("test", "test", "test", "test", "test"))
+	require.NoError(t, err)
+	del := types.NewDelegation(delAddr1, valAddr1, math.LegacyOneDec())
+	ubd := types.NewUnbondingDelegation(delAddr1, valAddr1, 15, bondTime, math.OneInt(), 1)
+	red := types.NewRedelegation(delAddr1, valAddr1, valAddr1, 12, bondTime, math.OneInt(), math.LegacyOneDec(), 0)
 
-	kvPairs := cmn.KVPairs{
-		cmn.KVPair{Key: types.LastTotalPowerKey, Value: cdc.MustMarshalBinaryLengthPrefixed(sdk.OneInt())},
-		cmn.KVPair{Key: types.GetValidatorKey(valAddr1), Value: cdc.MustMarshalBinaryLengthPrefixed(val)},
-		cmn.KVPair{Key: types.LastValidatorPowerKey, Value: valAddr1.Bytes()},
-		cmn.KVPair{Key: types.GetDelegationKey(delAddr1, valAddr1), Value: cdc.MustMarshalBinaryLengthPrefixed(del)},
-		cmn.KVPair{Key: types.GetUBDKey(delAddr1, valAddr1), Value: cdc.MustMarshalBinaryLengthPrefixed(ubd)},
-		cmn.KVPair{Key: types.GetREDKey(delAddr1, valAddr1, valAddr1), Value: cdc.MustMarshalBinaryLengthPrefixed(red)},
-		cmn.KVPair{Key: []byte{0x99}, Value: []byte{0x99}},
+	kvPairs := kv.Pairs{
+		Pairs: []kv.Pair{
+			{Key: types.LastTotalPowerKey, Value: cdc.MustMarshal(&sdk.IntProto{Int: math.OneInt()})},
+			{Key: types.GetValidatorKey(valAddr1), Value: cdc.MustMarshal(&val)},
+			{Key: types.LastValidatorPowerKey, Value: valAddr1.Bytes()},
+			{Key: types.GetDelegationKey(delAddr1, valAddr1), Value: cdc.MustMarshal(&del)},
+			{Key: types.GetUBDKey(delAddr1, valAddr1), Value: cdc.MustMarshal(&ubd)},
+			{Key: types.GetREDKey(delAddr1, valAddr1, valAddr1), Value: cdc.MustMarshal(&red)},
+			{Key: []byte{0x99}, Value: []byte{0x99}},
+		},
 	}
 
 	tests := []struct {
 		name        string
 		expectedLog string
 	}{
-		{"LastTotalPower", fmt.Sprintf("%v\n%v", sdk.OneInt(), sdk.OneInt())},
+		{"LastTotalPower", fmt.Sprintf("%v\n%v", math.OneInt(), math.OneInt())},
 		{"Validator", fmt.Sprintf("%v\n%v", val, val)},
 		{"LastValidatorPower/ValidatorsByConsAddr/ValidatorsByPowerIndex", fmt.Sprintf("%v\n%v", valAddr1, valAddr1)},
 		{"Delegation", fmt.Sprintf("%v\n%v", del, del)},
@@ -66,9 +62,9 @@ func TestDecodeStore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			switch i {
 			case len(tests) - 1:
-				require.Panics(t, func() { DecodeStore(cdc, kvPairs[i], kvPairs[i]) }, tt.name)
+				require.Panics(t, func() { dec(kvPairs.Pairs[i], kvPairs.Pairs[i]) }, tt.name)
 			default:
-				require.Equal(t, tt.expectedLog, DecodeStore(cdc, kvPairs[i], kvPairs[i]), tt.name)
+				require.Equal(t, tt.expectedLog, dec(kvPairs.Pairs[i], kvPairs.Pairs[i]), tt.name)
 			}
 		})
 	}

@@ -1,21 +1,27 @@
-package types
+package types_test
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/tendermint/tendermint/crypto/secp256k1"
 
-	"github.com/cosmos/cosmos-sdk/codec"
+	"cosmossdk.io/depinject"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/exported"
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	"github.com/cosmos/cosmos-sdk/x/auth/testutil"
+	"github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 func TestBaseAddressPubKey(t *testing.T) {
-	_, pub1, addr1 := KeyTestPubAddr()
-	_, pub2, addr2 := KeyTestPubAddr()
-	acc := NewBaseAccountWithAddress(addr1)
+	_, pub1, addr1 := testdata.KeyTestPubAddr()
+	_, pub2, addr2 := testdata.KeyTestPubAddr()
+	acc := types.NewBaseAccountWithAddress(addr1)
 
 	// check the address (set) and pubkey (not set)
 	require.EqualValues(t, addr1, acc.GetAddress())
@@ -39,27 +45,19 @@ func TestBaseAddressPubKey(t *testing.T) {
 	//------------------------------------
 
 	// can set address on empty account
-	acc2 := BaseAccount{}
+	acc2 := types.BaseAccount{}
 	err = acc2.SetAddress(addr2)
 	require.Nil(t, err)
 	require.EqualValues(t, addr2, acc2.GetAddress())
+
+	// no panic on calling string with an account with pubkey
+	require.NotEmpty(t, acc.String())
+	require.NotPanics(t, func() { _ = acc.String() })
 }
 
-func TestBaseAccountCoins(t *testing.T) {
-	_, _, addr := KeyTestPubAddr()
-	acc := NewBaseAccountWithAddress(addr)
-
-	someCoins := sdk.Coins{sdk.NewInt64Coin("atom", 123), sdk.NewInt64Coin("eth", 246)}
-
-	err := acc.SetCoins(someCoins)
-	require.Nil(t, err)
-	require.Equal(t, someCoins, acc.GetCoins())
-}
-
-func TestBaseAccountSequence(t *testing.T) {
-	_, _, addr := KeyTestPubAddr()
-	acc := NewBaseAccountWithAddress(addr)
-
+func TestBaseSequence(t *testing.T) {
+	_, _, addr := testdata.KeyTestPubAddr()
+	acc := types.NewBaseAccountWithAddress(addr)
 	seq := uint64(7)
 
 	err := acc.SetSequence(seq)
@@ -68,56 +66,118 @@ func TestBaseAccountSequence(t *testing.T) {
 }
 
 func TestBaseAccountMarshal(t *testing.T) {
-	_, pub, addr := KeyTestPubAddr()
-	acc := NewBaseAccountWithAddress(addr)
+	var accountKeeper authkeeper.AccountKeeper
 
-	someCoins := sdk.Coins{sdk.NewInt64Coin("atom", 123), sdk.NewInt64Coin("eth", 246)}
+	err := depinject.Inject(testutil.AppConfig, &accountKeeper)
+	require.NoError(t, err)
+	_, pub, addr := testdata.KeyTestPubAddr()
+	acc := types.NewBaseAccountWithAddress(addr)
 	seq := uint64(7)
 
 	// set everything on the account
-	err := acc.SetPubKey(pub)
+	err = acc.SetPubKey(pub)
 	require.Nil(t, err)
 	err = acc.SetSequence(seq)
 	require.Nil(t, err)
-	err = acc.SetCoins(someCoins)
+
+	bz, err := accountKeeper.MarshalAccount(acc)
 	require.Nil(t, err)
 
-	// need a codec for marshaling
-	cdc := codec.New()
-	codec.RegisterCrypto(cdc)
-
-	b, err := cdc.MarshalBinaryLengthPrefixed(acc)
-	require.Nil(t, err)
-
-	acc2 := BaseAccount{}
-	err = cdc.UnmarshalBinaryLengthPrefixed(b, &acc2)
+	acc2, err := accountKeeper.UnmarshalAccount(bz)
 	require.Nil(t, err)
 	require.Equal(t, acc, acc2)
 
 	// error on bad bytes
-	acc2 = BaseAccount{}
-	err = cdc.UnmarshalBinaryLengthPrefixed(b[:len(b)/2], &acc2)
+	_, err = accountKeeper.UnmarshalAccount(bz[:len(bz)/2])
 	require.NotNil(t, err)
 }
 
 func TestGenesisAccountValidate(t *testing.T) {
 	pubkey := secp256k1.GenPrivKey().PubKey()
 	addr := sdk.AccAddress(pubkey.Address())
-	baseAcc := NewBaseAccount(addr, nil, pubkey, 0, 0)
+	baseAcc := types.NewBaseAccount(addr, pubkey, 0, 0)
+
 	tests := []struct {
 		name   string
-		acc    exported.GenesisAccount
-		expErr error
+		acc    types.GenesisAccount
+		expErr bool
 	}{
 		{
 			"valid base account",
 			baseAcc,
-			nil,
+			false,
 		},
 		{
 			"invalid base valid account",
-			NewBaseAccount(addr, sdk.NewCoins(), secp256k1.GenPrivKey().PubKey(), 0, 0),
-			errors.New("pubkey and address pair is invalid"),
+			types.NewBaseAccount(addr, secp256k1.GenPrivKey().PubKey(), 0, 0),
+			true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expErr, tt.acc.Validate() != nil)
+		})
+	}
+}
+
+func TestModuleAccountString(t *testing.T) {
+	name := "test"
+	moduleAcc := types.NewEmptyModuleAccount(name, types.Minter, types.Burner, types.Staking)
+	want := `base_account:<address:"cosmos1n7rdpqvgf37ktx30a2sv2kkszk3m7ncmg5drhe" > name:"test" permissions:"minter" permissions:"burner" permissions:"staking" `
+	require.Equal(t, want, moduleAcc.String())
+	moduleAcc.SetSequence(10)
+	want = `base_account:<address:"cosmos1n7rdpqvgf37ktx30a2sv2kkszk3m7ncmg5drhe" sequence:10 > name:"test" permissions:"minter" permissions:"burner" permissions:"staking" `
+	require.Equal(t, want, moduleAcc.String())
+}
+
+func TestHasPermissions(t *testing.T) {
+	name := "test"
+	macc := types.NewEmptyModuleAccount(name, types.Staking, types.Minter, types.Burner)
+	cases := []struct {
+		permission string
+		expectHas  bool
+	}{
+		{types.Staking, true},
+		{types.Minter, true},
+		{types.Burner, true},
+		{"other", false},
+	}
+
+	for i, tc := range cases {
+		hasPerm := macc.HasPermission(tc.permission)
+		if tc.expectHas {
+			require.True(t, hasPerm, "test case #%d", i)
+		} else {
+			require.False(t, hasPerm, "test case #%d", i)
+		}
+	}
+}
+
+func TestValidate(t *testing.T) {
+	addr := sdk.AccAddress(secp256k1.GenPrivKey().PubKey().Address())
+	baseAcc := types.NewBaseAccount(addr, nil, 0, 0)
+	tests := []struct {
+		name   string
+		acc    types.GenesisAccount
+		expErr error
+	}{
+		{
+			"valid module account",
+			types.NewEmptyModuleAccount("test"),
+			nil,
+		},
+		{
+			"invalid name and address pair",
+			types.NewModuleAccount(baseAcc, "test"),
+			fmt.Errorf("address %s cannot be derived from the module name 'test'", addr),
+		},
+		{
+			"empty module account name",
+			types.NewModuleAccount(baseAcc, "    "),
+			errors.New("module account name cannot be blank"),
 		},
 	}
 	for _, tt := range tests {
@@ -127,4 +187,40 @@ func TestGenesisAccountValidate(t *testing.T) {
 			require.Equal(t, tt.expErr, err)
 		})
 	}
+}
+
+func TestModuleAccountJSON(t *testing.T) {
+	pubkey := secp256k1.GenPrivKey().PubKey()
+	addr := sdk.AccAddress(pubkey.Address())
+	baseAcc := types.NewBaseAccount(addr, nil, 10, 50)
+	acc := types.NewModuleAccount(baseAcc, "test", "burner")
+
+	bz, err := json.Marshal(acc)
+	require.NoError(t, err)
+
+	bz1, err := acc.MarshalJSON()
+	require.NoError(t, err)
+	require.Equal(t, string(bz1), string(bz))
+
+	var a types.ModuleAccount
+	require.NoError(t, json.Unmarshal(bz, &a))
+	require.Equal(t, acc.String(), a.String())
+}
+
+func TestGenesisAccountsContains(t *testing.T) {
+	pubkey := secp256k1.GenPrivKey().PubKey()
+	addr := sdk.AccAddress(pubkey.Address())
+	acc := types.NewBaseAccount(addr, secp256k1.GenPrivKey().PubKey(), 0, 0)
+
+	genAccounts := types.GenesisAccounts{}
+	require.False(t, genAccounts.Contains(acc.GetAddress()))
+
+	genAccounts = append(genAccounts, acc)
+	require.True(t, genAccounts.Contains(acc.GetAddress()))
+}
+
+func TestNewModuleAddressOrBech32Address(t *testing.T) {
+	input := "cosmos1cwwv22j5ca08ggdv9c2uky355k908694z577tv"
+	require.Equal(t, input, types.NewModuleAddressOrBech32Address(input).String())
+	require.Equal(t, "cosmos1jv65s3grqf6v6jl3dp4t6c9t9rk99cd88lyufl", types.NewModuleAddressOrBech32Address("distribution").String())
 }

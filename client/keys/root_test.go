@@ -3,12 +3,12 @@ package keys
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"gotest.tools/v3/assert"
 )
 
 func TestCommands(t *testing.T) {
-	rootCommands := Commands()
-	assert.NotNil(t, rootCommands)
+	rootCommands := Commands("home")
+	assert.Assert(t, rootCommands != nil)
 
 	// Commands are registered
 	assert.Equal(t, 11, len(rootCommands.Commands()))

@@ -1,38 +1,19 @@
 package store
 
 import (
-	dbm "github.com/tendermint/tm-db"
+	dbm "github.com/cosmos/cosmos-db"
 
-	"github.com/cosmos/cosmos-sdk/store/cache"
-	"github.com/cosmos/cosmos-sdk/store/rootmulti"
-	"github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/log"
+	"cosmossdk.io/store/cache"
+	"cosmossdk.io/store/metrics"
+	"cosmossdk.io/store/rootmulti"
+	"cosmossdk.io/store/types"
 )
 
-// Pruning strategies that may be provided to a KVStore to enable pruning.
-const (
-	PruningStrategyNothing    = "nothing"
-	PruningStrategyEverything = "everything"
-	PruningStrategySyncable   = "syncable"
-)
-
-func NewCommitMultiStore(db dbm.DB) types.CommitMultiStore {
-	return rootmulti.NewStore(db)
+func NewCommitMultiStore(db dbm.DB, logger log.Logger, metricGatherer metrics.StoreMetrics) types.CommitMultiStore {
+	return rootmulti.NewStore(db, logger, metricGatherer)
 }
 
 func NewCommitKVStoreCacheManager() types.MultiStorePersistentCache {
 	return cache.NewCommitKVStoreCacheManager(cache.DefaultCommitKVStoreCacheSize)
-}
-
-func NewPruningOptionsFromString(strategy string) (opt PruningOptions) {
-	switch strategy {
-	case PruningStrategyNothing:
-		opt = PruneNothing
-	case PruningStrategyEverything:
-		opt = PruneEverything
-	case PruningStrategySyncable:
-		opt = PruneSyncable
-	default:
-		opt = PruneSyncable
-	}
-	return
 }
