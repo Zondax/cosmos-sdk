@@ -9,7 +9,7 @@ require (
 	cosmossdk.io/log v0.1.0
 	cosmossdk.io/math v1.0.0-rc.0
 	cosmossdk.io/simapp v0.0.0-20230309163709-87da587416ba
-	cosmossdk.io/store v0.0.0-20230314205129-d50cb1ef349f
+	cosmossdk.io/store v0.1.0-alpha.1
 	cosmossdk.io/x/evidence v0.1.0
 	cosmossdk.io/x/feegrant v0.0.0-20230117113717-50e7c4a4ceff
 	cosmossdk.io/x/nft v0.0.0-20230113085233-fae3332d62fc
@@ -25,7 +25,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.2
-	google.golang.org/protobuf v1.29.1
+	google.golang.org/protobuf v1.30.0
 	gotest.tools/v3 v3.4.0
 	pgregory.net/rapid v0.5.5
 )
@@ -64,7 +64,7 @@ require (
 	github.com/cosmos/btcutil v1.0.5 // indirect
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
 	github.com/cosmos/gogogateway v1.2.0 // indirect
-	github.com/cosmos/iavl v0.21.0-alpha.1 // indirect
+	github.com/cosmos/iavl v0.21.0-beta.1 // indirect
 	github.com/cosmos/ledger-cosmos-go v0.13.0 // indirect
 	github.com/creachadair/taskgroup v0.4.2 // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
