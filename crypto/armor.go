@@ -7,11 +7,9 @@ import (
 	"io"
 
 	"github.com/cometbft/cometbft/crypto"
-	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/openpgp/armor" //nolint:staticcheck
 
 	errorsmod "cosmossdk.io/errors"
-	chacha20poly1305 "golang.org/x/crypto/chacha20poly1305"
 
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/bcrypt"
@@ -29,19 +27,6 @@ const (
 
 	headerVersion = "version"
 	headerType    = "type"
-)
-
-var (
-	kdf       = "kdf"
-	kdfBcrypt = "bcrypt"
-	kdfArgon2 = "argon2"
-)
-
-const (
-	argon2Time    = 1
-	argon2Memory  = 64 * 1024
-	argon2Threads = 4
-	argon2KeyLen  = 32
 )
 
 // BcryptSecurityParameter is security parameter var, and it can be changed within the lcd test.
@@ -146,7 +131,7 @@ func unarmorBytes(armorStr, blockType string) (bz []byte, header map[string]stri
 func EncryptArmorPrivKey(privKey cryptotypes.PrivKey, passphrase string, algo string) string {
 	saltBytes, encBytes := encryptPrivKey(privKey, passphrase)
 	header := map[string]string{
-		kdf:    kdfArgon2,
+		"kdf":  "bcrypt",
 		"salt": fmt.Sprintf("%X", saltBytes),
 	}
 
@@ -164,20 +149,15 @@ func EncryptArmorPrivKey(privKey cryptotypes.PrivKey, passphrase string, algo st
 // encrypted priv key.
 func encryptPrivKey(privKey cryptotypes.PrivKey, passphrase string) (saltBytes []byte, encBytes []byte) {
 	saltBytes = crypto.CRandBytes(16)
-
-	key := argon2.IDKey([]byte(passphrase), saltBytes, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
-	privKeyBytes := legacy.Cdc.MustMarshal(privKey)
-
-	aead, err := chacha20poly1305.New(key)
+	key, err := bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), BcryptSecurityParameter)
 	if err != nil {
 		panic(errorsmod.Wrap(err, "error generating bcrypt key from passphrase"))
 	}
 
-	nonce := make([]byte, aead.NonceSize(), aead.NonceSize()+len(privKeyBytes)+aead.Overhead())
+	key = crypto.Sha256(key) // get 32 bytes
+	privKeyBytes := legacy.Cdc.MustMarshal(privKey)
 
-	encBytes = aead.Seal(nonce, nonce, privKeyBytes, nil)
-
-	return saltBytes, encBytes
+	return saltBytes, xsalsa20symmetric.EncryptSymmetric(privKeyBytes, key)
 }
 
 // UnarmorDecryptPrivKey returns the privkey byte slice, a string of the algo type, and an error
@@ -191,8 +171,8 @@ func UnarmorDecryptPrivKey(armorStr string, passphrase string) (privKey cryptoty
 		return privKey, "", fmt.Errorf("unrecognized armor type: %v", blockType)
 	}
 
-	if header[kdf] != kdfBcrypt && header[kdf] != kdfArgon2 {
-		return privKey, "", fmt.Errorf("unrecognized KDF type: %v", header[kdf])
+	if header["kdf"] != "bcrypt" {
+		return privKey, "", fmt.Errorf("unrecognized KDF type: %v", header["kdf"])
 	}
 
 	if header["salt"] == "" {
@@ -204,7 +184,7 @@ func UnarmorDecryptPrivKey(armorStr string, passphrase string) (privKey cryptoty
 		return privKey, "", fmt.Errorf("error decoding salt: %v", err.Error())
 	}
 
-	privKey, err = decryptPrivKey(saltBytes, encBytes, passphrase, header[kdf])
+	privKey, err = decryptPrivKey(saltBytes, encBytes, passphrase)
 
 	if header[headerType] == "" {
 		header[headerType] = defaultAlgo
@@ -213,44 +193,18 @@ func UnarmorDecryptPrivKey(armorStr string, passphrase string) (privKey cryptoty
 	return privKey, header[headerType], err
 }
 
-func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string, kdf string) (privKey cryptotypes.PrivKey, err error) {
-	// Key derivation
-	var (
-		key          []byte
-		privKeyBytes []byte
-	)
-
-	// Since the argon2 key derivation and chacha encryption was implemented together, it is not possible to have mixed kdf and encryption algorithms
-	switch kdf {
-	case kdfArgon2:
-		key = argon2.IDKey([]byte(passphrase), saltBytes, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
-
-		aead, err := chacha20poly1305.New(key)
-		if err != nil {
-			return privKey, errorsmod.Wrap(err, "Error generating aead cypher from key.")
-		} else if len(encBytes) < aead.NonceSize() {
-			return privKey, errorsmod.Wrap(nil, "Encrypted bytes length is smaller than aead nonce size.")
-		}
-
-		nonce, privKeyBytesEncrypted := encBytes[:aead.NonceSize()], encBytes[aead.NonceSize():] // Split nonce and ciphertext.
-		privKeyBytes, err = aead.Open(nil, nonce, privKeyBytesEncrypted, nil)                    // Decrypt the message and check it wasn't tampered with.
-		if err != nil {
-			return privKey, errorsmod.Wrap(err, "Error decrypting with aead.")
-		}
-	default:
-		key, err = bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), BcryptSecurityParameter)
-		if err != nil {
-			return privKey, errorsmod.Wrap(err, "Error generating bcrypt key from passphrase.")
-		}
-		key = crypto.Sha256(key) // Get 32 bytes
-		privKeyBytes, err = xsalsa20symmetric.DecryptSymmetric(encBytes, key)
-
-		if err == xsalsa20symmetric.ErrCiphertextDecrypt {
-			return privKey, sdkerrors.ErrWrongPassword
-		}
+func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string) (privKey cryptotypes.PrivKey, err error) {
+	key, err := bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), BcryptSecurityParameter)
+	if err != nil {
+		return privKey, errorsmod.Wrap(err, "error generating bcrypt key from passphrase")
 	}
 
-	if err != nil {
+	key = crypto.Sha256(key) // Get 32 bytes
+
+	privKeyBytes, err := xsalsa20symmetric.DecryptSymmetric(encBytes, key)
+	if err != nil && err == xsalsa20symmetric.ErrCiphertextDecrypt {
+		return privKey, sdkerrors.ErrWrongPassword
+	} else if err != nil {
 		return privKey, err
 	}
 

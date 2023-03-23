@@ -8,9 +8,7 @@ import (
 	"testing"
 
 	cmtcrypto "github.com/cometbft/cometbft/crypto"
-	"github.com/cometbft/cometbft/crypto/armor"
 	"github.com/cometbft/cometbft/crypto/xsalsa20symmetric"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -195,46 +193,4 @@ func TestArmor(t *testing.T) {
 	require.Nil(t, err, "%+v", err)
 	assert.Equal(t, blockType, blockType2)
 	assert.Equal(t, data, data2)
-}
-
-func TestBcryptLegacyEncryption(t *testing.T) {
-	privKey := secp256k1.GenPrivKey()
-	saltBytes := cmtcrypto.CRandBytes(16)
-	passphrase := "passphrase"
-	privKeyBytes := legacy.Cdc.MustMarshal(privKey)
-
-	// Bcrypt + Aead
-	headerBcrypt := map[string]string{
-		"kdf":  "bcrypt",
-		"salt": fmt.Sprintf("%X", saltBytes),
-	}
-	keyBcrypt, _ := bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), 12) // Legacy Ley gemeratopm
-	keyBcrypt = cmtcrypto.Sha256(keyBcrypt)
-
-	// bcrypt + xsalsa20symmetric
-	encBytesBcryptXsalsa20symetric := xsalsa20symmetric.EncryptSymmetric(privKeyBytes, keyBcrypt)
-
-	type testCase struct {
-		description string
-		armor       string
-	}
-
-	for _, scenario := range []testCase{
-		{
-			description: "Argon2 + Aead",
-			armor:       crypto.EncryptArmorPrivKey(privKey, "passphrase", ""),
-		},
-		{
-			description: "Bcrypt + xsalsa20symmetric",
-			armor:       armor.EncodeArmor("TENDERMINT PRIVATE KEY", headerBcrypt, encBytesBcryptXsalsa20symetric),
-		},
-	} {
-		t.Run(scenario.description, func(t *testing.T) {
-			_, _, err := crypto.UnarmorDecryptPrivKey(scenario.armor, "wrongpassphrase")
-			require.Error(t, err)
-			decryptedPrivKey, _, err := crypto.UnarmorDecryptPrivKey(scenario.armor, "passphrase")
-			require.NoError(t, err)
-			require.True(t, privKey.Equals(decryptedPrivKey))
-		})
-	}
 }
