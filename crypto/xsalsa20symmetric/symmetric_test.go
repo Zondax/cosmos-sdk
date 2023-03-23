@@ -1,13 +1,12 @@
 package xsalsa20symmetric
 
 import (
-	"crypto/sha256"
 	"testing"
 
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/argon2"
 )
 
 func TestSimple(t *testing.T) {
@@ -23,21 +22,12 @@ func TestSimple(t *testing.T) {
 func TestSimpleWithKDF(t *testing.T) {
 	plaintext := []byte("sometext")
 	secretPass := []byte("somesecret")
-	secret, err := bcrypt.GenerateFromPassword(secretPass, 12)
-	if err != nil {
-		t.Error(err)
-	}
-	secret = sha256Sum(secret)
+	saltBytes := crypto.CRandBytes(16)
+	secret := argon2.IDKey(secretPass, saltBytes, 1, 64*1024, 4, 32)
 
 	ciphertext := EncryptSymmetric(plaintext, secret)
 	plaintext2, err := DecryptSymmetric(ciphertext, secret)
 
 	require.NoError(t, err, "%+v", err)
 	assert.Equal(t, plaintext, plaintext2)
-}
-
-func sha256Sum(bytes []byte) []byte {
-	hasher := sha256.New()
-	hasher.Write(bytes)
-	return hasher.Sum(nil)
 }
