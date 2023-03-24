@@ -378,6 +378,8 @@ func (vscd ValidateSigCountDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, sim
 		if uint64(sigCount) > params.TxSigLimit {
 			return ctx, errorsmod.Wrapf(sdkerrors.ErrTooManySignatures,
 				"signatures: %d, limit: %d", sigCount, params.TxSigLimit)
+		} else if len(pk.Bytes()) == 0 {
+			return ctx, errorsmod.Wrapf(sdkerrors.ErrInvalidPubKey, "public key size is 0")
 		}
 	}
 
