@@ -1949,7 +1949,33 @@ func TestRenameKey(t *testing.T) {
 	}
 }
 
-func requireEqualRenamedKey(t *testing.T, key *Record, mnemonic *Record, nameMatch bool) {
+// TestChangeBcrypt tests the compatibility from upstream Bcrypt and our own
+func TestChangeBcrypt(t *testing.T) {
+	pw := []byte("somepasswword!")
+
+	saltBytes := cmtcrypto.CRandBytes(16)
+	cosmosHash, err := cosmosbcrypt.GenerateFromPassword(saltBytes, pw, 2)
+	require.NoError(t, err)
+
+	bcryptHash, err := bcrypt.GenerateFromPassword(pw, 2)
+	require.NoError(t, err)
+
+	// Check the new hash with the old bcrypt, vice-versa and with the same
+	// bcrypt version just because.
+	err = cosmosbcrypt.CompareHashAndPassword(bcryptHash, pw)
+	require.NoError(t, err)
+
+	err = cosmosbcrypt.CompareHashAndPassword(cosmosHash, pw)
+	require.NoError(t, err)
+
+	err = bcrypt.CompareHashAndPassword(cosmosHash, pw)
+	require.NoError(t, err)
+
+	err = bcrypt.CompareHashAndPassword(bcryptHash, pw)
+	require.NoError(t, err)
+}
+
+func requireEqualRenamedKey(t *testing.T, key, mnemonic *Record, nameMatch bool) {
 	if nameMatch {
 		require.Equal(t, key.Name, mnemonic.Name)
 	}
