@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/openpgp/armor" //nolint:staticcheck
 
 	errorsmod "cosmossdk.io/errors"
-	chacha20poly1305 "golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/chacha20poly1305"
 
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/bcrypt"
@@ -32,7 +32,7 @@ const (
 )
 
 var (
-	kdf       = "kdf"
+	kdfHeader = "kdf"
 	kdfBcrypt = "bcrypt"
 	kdfArgon2 = "argon2"
 )
@@ -146,8 +146,8 @@ func unarmorBytes(armorStr, blockType string) (bz []byte, header map[string]stri
 func EncryptArmorPrivKey(privKey cryptotypes.PrivKey, passphrase string, algo string) string {
 	saltBytes, encBytes := encryptPrivKey(privKey, passphrase)
 	header := map[string]string{
-		kdf:    kdfArgon2,
-		"salt": fmt.Sprintf("%X", saltBytes),
+		kdfHeader: kdfArgon2,
+		"salt":    fmt.Sprintf("%X", saltBytes),
 	}
 
 	if algo != "" {
@@ -191,8 +191,8 @@ func UnarmorDecryptPrivKey(armorStr string, passphrase string) (privKey cryptoty
 		return privKey, "", fmt.Errorf("unrecognized armor type: %v", blockType)
 	}
 
-	if header[kdf] != kdfBcrypt && header[kdf] != kdfArgon2 {
-		return privKey, "", fmt.Errorf("unrecognized KDF type: %v", header[kdf])
+	if header[kdfHeader] != kdfBcrypt && header[kdfHeader] != kdfArgon2 {
+		return privKey, "", fmt.Errorf("unrecognized KDF type: %v", header[kdfHeader])
 	}
 
 	if header["salt"] == "" {
@@ -204,7 +204,7 @@ func UnarmorDecryptPrivKey(armorStr string, passphrase string) (privKey cryptoty
 		return privKey, "", fmt.Errorf("error decoding salt: %v", err.Error())
 	}
 
-	privKey, err = decryptPrivKey(saltBytes, encBytes, passphrase, header[kdf])
+	privKey, err = decryptPrivKey(saltBytes, encBytes, passphrase, header[kdfHeader])
 
 	if header[headerType] == "" {
 		header[headerType] = defaultAlgo
@@ -237,7 +237,7 @@ func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string, kdf st
 		if err != nil {
 			return privKey, errorsmod.Wrap(err, "Error decrypting with aead.")
 		}
-	default:
+	case kdfBcrypt:
 		key, err = bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), BcryptSecurityParameter)
 		if err != nil {
 			return privKey, errorsmod.Wrap(err, "Error generating bcrypt cypher for key.")
@@ -248,6 +248,8 @@ func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string, kdf st
 		if err == xsalsa20symmetric.ErrCiphertextDecrypt {
 			return privKey, sdkerrors.ErrWrongPassword
 		}
+	default:
+		return privKey, errorsmod.Wrap(nil, "Unrecognized key derivation function (kdf) header.")
 	}
 
 	if err != nil {
