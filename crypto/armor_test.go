@@ -235,4 +235,14 @@ func TestBcryptLegacyEncryption(t *testing.T) {
 			require.True(t, privKey.Equals(decryptedPrivKey))
 		})
 	}
+
+	// Test wrong kdf header
+	headerWithoutKdf := map[string]string{
+		"kdf":  "wrongKdf",
+		"salt": fmt.Sprintf("%X", saltBytes),
+	}
+
+	_, _, err := crypto.UnarmorDecryptPrivKey(crypto.EncodeArmor("TENDERMINT PRIVATE KEY", headerWithoutKdf, encBytesBcryptXsalsa20symetric), "passphrase")
+	require.Error(t, err)
+	require.Equal(t, "unrecognized KDF type: wrongKdf", err.Error())
 }

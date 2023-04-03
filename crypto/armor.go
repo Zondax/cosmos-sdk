@@ -249,7 +249,7 @@ func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string, kdf st
 			return privKey, sdkerrors.ErrWrongPassword
 		}
 	default:
-		return privKey, errorsmod.Wrap(nil, "Unrecognized key derivation function (kdf) header.")
+		return privKey, errorsmod.Wrap(nil, fmt.Sprintf("Unrecognized key derivation function (kdf) header: %s.", kdf))
 	}
 
 	if err != nil {
