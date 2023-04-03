@@ -143,7 +143,7 @@ func unarmorBytes(armorStr, blockType string) (bz []byte, header map[string]stri
 // encrypt/decrypt with armor
 
 // Encrypt and armor the private key.
-func EncryptArmorPrivKey(privKey cryptotypes.PrivKey, passphrase string, algo string) string {
+func EncryptArmorPrivKey(privKey cryptotypes.PrivKey, passphrase, algo string) string {
 	saltBytes, encBytes := encryptPrivKey(privKey, passphrase)
 	header := map[string]string{
 		kdfHeader: kdfArgon2,
@@ -162,7 +162,7 @@ func EncryptArmorPrivKey(privKey cryptotypes.PrivKey, passphrase string, algo st
 // encrypt the given privKey with the passphrase using a randomly
 // generated salt and the xsalsa20 cipher. returns the salt and the
 // encrypted priv key.
-func encryptPrivKey(privKey cryptotypes.PrivKey, passphrase string) (saltBytes []byte, encBytes []byte) {
+func encryptPrivKey(privKey cryptotypes.PrivKey, passphrase string) (saltBytes, encBytes []byte) {
 	saltBytes = crypto.CRandBytes(16)
 
 	key := argon2.IDKey([]byte(passphrase), saltBytes, Argon2Time, Argon2Memory, Argon2Threads, Argon2KeyLen)
@@ -181,7 +181,7 @@ func encryptPrivKey(privKey cryptotypes.PrivKey, passphrase string) (saltBytes [
 }
 
 // UnarmorDecryptPrivKey returns the privkey byte slice, a string of the algo type, and an error
-func UnarmorDecryptPrivKey(armorStr string, passphrase string) (privKey cryptotypes.PrivKey, algo string, err error) {
+func UnarmorDecryptPrivKey(armorStr, passphrase string) (privKey cryptotypes.PrivKey, algo string, err error) {
 	blockType, header, encBytes, err := DecodeArmor(armorStr)
 	if err != nil {
 		return privKey, "", err
