@@ -10,6 +10,7 @@ import (
 	cmtcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/xsalsa20symmetric"
 
+	_ "github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
