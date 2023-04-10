@@ -265,8 +265,8 @@ func TestAddRecoverFileBackend(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		mockIn.Reset(fmt.Sprintf("%s\n%s\n", keyringPassword, keyringPassword))
-		_ = kb.Delete("keyname1")
+		mockIn.Reset(fmt.Sprintf("# ah %s\n%s\n", keyringPassword, keyringPassword))
+		kb.Delete("keyname1")
 	})
 
 	mockIn.Reset(fmt.Sprintf("%s\n%s\n", keyringPassword, keyringPassword))

@@ -17,9 +17,6 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 
-	cometbftCrypto "github.com/cometbft/cometbft/crypto"
-
-	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/cosmos/cosmos-sdk/client/input"
@@ -754,8 +751,11 @@ func newRealPrompt(dir string, buf io.Reader) func(string) (string, error) {
 				continue
 			}
 
-			saltBytes := cometbftCrypto.CRandBytes(16)
-			passwordHash := argon2.IDKey([]byte(pass), saltBytes, crypto.Argon2Time, crypto.Argon2Memory, crypto.Argon2Threads, crypto.Argon2KeyLen)
+			passwordHash, err := bcrypt.GenerateFromPassword([]byte(pass), 2)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
 
 			if err := os.WriteFile(keyhashFilePath, passwordHash, 0o600); err != nil {
 				return "", err
