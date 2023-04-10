@@ -12,14 +12,16 @@ import (
 	"testing"
 
 	"github.com/99designs/keyring"
+	cmtcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/bcrypt"
+	cosmosbcrypt "github.com/cosmos/cosmos-sdk/crypto/keys/bcrypt"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/multisig"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -1955,7 +1957,7 @@ func TestChangeBcrypt(t *testing.T) {
 	pw := []byte("somepasswword!")
 
 	saltBytes := cmtcrypto.CRandBytes(16)
-	cosmosHash, err := bcrypt.GenerateFromPassword(saltBytes, pw, 2)
+	cosmosHash, err := cosmosbcrypt.GenerateFromPassword(saltBytes, pw, 2)
 	require.NoError(t, err)
 
 	bcryptHash, err := bcrypt.GenerateFromPassword(pw, 2)
@@ -1963,10 +1965,10 @@ func TestChangeBcrypt(t *testing.T) {
 
 	// Check the new hash with the old bcrypt, vice-versa and with the same
 	// bcrypt version just because.
-	err = bcrypt.CompareHashAndPassword(bcryptHash, pw)
+	err = cosmosbcrypt.CompareHashAndPassword(bcryptHash, pw)
 	require.NoError(t, err)
 
-	err = bcrypt.CompareHashAndPassword(cosmosHash, pw)
+	err = cosmosbcrypt.CompareHashAndPassword(cosmosHash, pw)
 	require.NoError(t, err)
 
 	err = bcrypt.CompareHashAndPassword(cosmosHash, pw)
