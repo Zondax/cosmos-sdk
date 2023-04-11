@@ -235,7 +235,7 @@ func decryptPrivKey(saltBytes []byte, encBytes []byte, passphrase string, kdf st
 		nonce, privKeyBytesEncrypted := encBytes[:aead.NonceSize()], encBytes[aead.NonceSize():] // Split nonce and ciphertext.
 		privKeyBytes, err = aead.Open(nil, nonce, privKeyBytesEncrypted, nil)                    // Decrypt the message and check it wasn't tampered with.
 		if err != nil {
-			return privKey, errorsmod.Wrap(err, "Error decrypting with aead.")
+			return privKey, sdkerrors.ErrWrongPassword
 		}
 	case kdfBcrypt:
 		key, err = bcrypt.GenerateFromPassword(saltBytes, []byte(passphrase), BcryptSecurityParameter)
