@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/cosmos/cosmos-sdk/x/nft"
+	"cosmossdk.io/x/nft"
 )
 
 func TestGRPCQuery(t *testing.T) {
@@ -16,6 +16,7 @@ func TestGRPCQuery(t *testing.T) {
 }
 
 func (s *TestSuite) TestBalance() {
+	s.accountKeeper.EXPECT().StringToBytes("owner").Return(nil, fmt.Errorf("decoding bech32 failed")).AnyTimes()
 	var req *nft.QueryBalanceRequest
 	testCases := []struct {
 		msg      string

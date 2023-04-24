@@ -3,6 +3,7 @@ package authz
 import (
 	"time"
 
+	errorsmod "cosmossdk.io/errors"
 	proto "github.com/cosmos/gogoproto/proto"
 
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -14,7 +15,7 @@ import (
 // which is passed into the `blockTime` arg.
 func NewGrant(blockTime time.Time, a Authorization, expiration *time.Time) (Grant, error) {
 	if expiration != nil && !expiration.After(blockTime) {
-		return Grant{}, sdkerrors.Wrapf(ErrInvalidExpirationTime, "expiration must be after the current block time (%v), got %v", blockTime.Format(time.RFC3339), expiration.Format(time.RFC3339))
+		return Grant{}, errorsmod.Wrapf(ErrInvalidExpirationTime, "expiration must be after the current block time (%v), got %v", blockTime.Format(time.RFC3339), expiration.Format(time.RFC3339))
 	}
 	msg, ok := a.(proto.Message)
 	if !ok {
@@ -52,6 +53,10 @@ func (g Grant) GetAuthorization() (Authorization, error) {
 }
 
 func (g Grant) ValidateBasic() error {
+	if g.Authorization == nil {
+		return sdkerrors.ErrInvalidType.Wrap("authorization is nil")
+	}
+
 	av := g.Authorization.GetCachedValue()
 	a, ok := av.(Authorization)
 	if !ok {

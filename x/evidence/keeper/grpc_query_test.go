@@ -1,12 +1,14 @@
 package keeper_test
 
 import (
+	"encoding/hex"
 	"fmt"
+	"strings"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"cosmossdk.io/x/evidence/exported"
+	"cosmossdk.io/x/evidence/types"
+
 	"github.com/cosmos/cosmos-sdk/types/query"
-	"github.com/cosmos/cosmos-sdk/x/evidence/exported"
-	"github.com/cosmos/cosmos-sdk/x/evidence/types"
 )
 
 func (suite *KeeperTestSuite) TestQueryEvidence() {
@@ -19,32 +21,41 @@ func (suite *KeeperTestSuite) TestQueryEvidence() {
 		msg       string
 		malleate  func()
 		expPass   bool
+		expErrMsg string
 		posttests func(res *types.QueryEvidenceResponse)
 	}{
-		{
-			"empty request",
-			func() {
-				req = &types.QueryEvidenceRequest{}
-			},
-			false,
-			func(res *types.QueryEvidenceResponse) {},
-		},
 		{
 			"invalid request with empty evidence hash",
 			func() {
 				req = &types.QueryEvidenceRequest{Hash: ""}
 			},
 			false,
+			"invalid request; hash is empty",
 			func(res *types.QueryEvidenceResponse) {},
+		},
+		{
+			"evidence not found",
+			func() {
+				numEvidence := 1
+				evidence = suite.populateEvidence(suite.ctx, numEvidence)
+				evidenceHash := strings.ToUpper(hex.EncodeToString(evidence[0].Hash()))
+				reqHash := strings.Repeat("a", len(evidenceHash))
+				req = types.NewQueryEvidenceRequest(reqHash)
+			},
+			false,
+			"not found",
+			func(res *types.QueryEvidenceResponse) {
+			},
 		},
 		{
 			"success",
 			func() {
 				numEvidence := 100
 				evidence = suite.populateEvidence(suite.ctx, numEvidence)
-				req = types.NewQueryEvidenceRequest(evidence[0].Hash().String())
+				req = types.NewQueryEvidenceRequest(strings.ToUpper(hex.EncodeToString(evidence[0].Hash())))
 			},
 			true,
+			"",
 			func(res *types.QueryEvidenceResponse) {
 				var evi exported.Evidence
 				err := suite.encCfg.InterfaceRegistry.UnpackAny(res.Evidence, &evi)
@@ -60,15 +71,14 @@ func (suite *KeeperTestSuite) TestQueryEvidence() {
 			suite.SetupTest()
 
 			tc.malleate()
-			ctx := sdk.WrapSDKContext(suite.ctx)
-
-			res, err := suite.queryClient.Evidence(ctx, req)
+			res, err := suite.queryClient.Evidence(suite.ctx, req)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
 				suite.Require().NotNil(res)
 			} else {
 				suite.Require().Error(err)
+				suite.Require().Contains(err.Error(), tc.expErrMsg)
 				suite.Require().Nil(res)
 			}
 
@@ -121,9 +131,7 @@ func (suite *KeeperTestSuite) TestQueryAllEvidence() {
 			suite.SetupTest()
 
 			tc.malleate()
-			ctx := sdk.WrapSDKContext(suite.ctx)
-
-			res, err := suite.queryClient.AllEvidence(ctx, req)
+			res, err := suite.queryClient.AllEvidence(suite.ctx, req)
 
 			if tc.expPass {
 				suite.Require().NoError(err)

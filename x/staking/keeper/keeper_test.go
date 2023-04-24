@@ -1,25 +1,27 @@
 package keeper_test
 
 import (
+	"errors"
 	"testing"
 
 	"cosmossdk.io/math"
-	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/testutil"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttime "github.com/cometbft/cometbft/types/time"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	tmtime "github.com/tendermint/tendermint/types/time"
 
+	storetypes "cosmossdk.io/store/types"
+
+	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/testutil"
+	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	stakingtestutil "github.com/cosmos/cosmos-sdk/x/staking/testutil"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 var (
@@ -40,15 +42,20 @@ type KeeperTestSuite struct {
 }
 
 func (s *KeeperTestSuite) SetupTest() {
-	key := sdk.NewKVStoreKey(stakingtypes.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(s.T(), key, sdk.NewTransientStoreKey("transient_test"))
-	ctx := testCtx.Ctx.WithBlockHeader(tmproto.Header{Time: tmtime.Now()})
+	key := storetypes.NewKVStoreKey(stakingtypes.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(s.T(), key, storetypes.NewTransientStoreKey("transient_test"))
+	ctx := testCtx.Ctx.WithBlockHeader(cmtproto.Header{Time: cmttime.Now()})
 	encCfg := moduletestutil.MakeTestEncodingConfig()
 
 	ctrl := gomock.NewController(s.T())
 	accountKeeper := stakingtestutil.NewMockAccountKeeper(ctrl)
 	accountKeeper.EXPECT().GetModuleAddress(stakingtypes.BondedPoolName).Return(bondedAcc.GetAddress())
 	accountKeeper.EXPECT().GetModuleAddress(stakingtypes.NotBondedPoolName).Return(notBondedAcc.GetAddress())
+	accountKeeper.EXPECT().StringToBytes(authtypes.NewModuleAddress(govtypes.ModuleName).String()).Return(authtypes.NewModuleAddress(govtypes.ModuleName), nil).AnyTimes()
+	accountKeeper.EXPECT().BytesToString(authtypes.NewModuleAddress(govtypes.ModuleName)).Return(authtypes.NewModuleAddress(govtypes.ModuleName).String(), nil).AnyTimes()
+	accountKeeper.EXPECT().StringToBytes("").Return(nil, errors.New("empty address string is not allowed")).AnyTimes()
+	accountKeeper.EXPECT().StringToBytes("invalid").Return(nil, errors.New("invalid bech32 string")).AnyTimes()
+
 	bankKeeper := stakingtestutil.NewMockBankKeeper(ctrl)
 
 	keeper := stakingkeeper.NewKeeper(

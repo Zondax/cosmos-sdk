@@ -2,14 +2,13 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
 
+	"cosmossdk.io/log"
 	crgerrs "cosmossdk.io/tools/rosetta/lib/errors"
 	crgtypes "cosmossdk.io/tools/rosetta/lib/types"
-	"github.com/tendermint/tendermint/libs/log"
 )
 
 // genesisBlockFetchTimeout defines a timeout to fetch the genesis block
@@ -26,7 +25,7 @@ func NewOnlineNetwork(network *types.NetworkIdentifier, client crgtypes.Client, 
 	var genesisHeight int64 = 1 // to get genesis block height
 	genesisBlock, err := client.BlockByHeight(ctx, &genesisHeight)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Could not get genesis block height. %v", err))
+		logger.Error("failed to get genesis block height", "err", err)
 	}
 
 	return OnlineNetwork{
@@ -38,7 +37,7 @@ func NewOnlineNetwork(network *types.NetworkIdentifier, client crgtypes.Client, 
 
 // OnlineNetwork groups together all the components required for the full rosetta implementation
 type OnlineNetwork struct {
-	client crgtypes.Client // used to query cosmos app + tendermint
+	client crgtypes.Client // used to query Cosmos app + CometBFT
 
 	network        *types.NetworkIdentifier      // identifies the network, it's static
 	networkOptions *types.NetworkOptionsResponse // identifies the network options, it's static

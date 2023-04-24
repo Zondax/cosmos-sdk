@@ -4,11 +4,14 @@ import (
 	"errors"
 	"testing"
 
+	"cosmossdk.io/log"
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
+	"cosmossdk.io/depinject"
 	"cosmossdk.io/math"
+
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/testutil/configurator"
@@ -51,20 +54,26 @@ func TestSlashingMsgs(t *testing.T) {
 		slashingKeeper keeper.Keeper
 	)
 
-	app, err := sims.SetupWithConfiguration(configurator.NewAppConfig(
-		configurator.ParamsModule(),
-		configurator.AuthModule(),
-		configurator.StakingModule(),
-		configurator.SlashingModule(),
-		configurator.TxModule(),
-		configurator.ConsensusModule(),
-		configurator.BankModule()),
+	app, err := sims.SetupWithConfiguration(
+		depinject.Configs(
+			configurator.NewAppConfig(
+				configurator.ParamsModule(),
+				configurator.AuthModule(),
+				configurator.StakingModule(),
+				configurator.SlashingModule(),
+				configurator.TxModule(),
+				configurator.ConsensusModule(),
+				configurator.BankModule(),
+			),
+			depinject.Supply(log.NewNopLogger()),
+		),
 		startupCfg, &stakingKeeper, &bankKeeper, &slashingKeeper)
+	require.NoError(t, err)
 
 	baseApp := app.BaseApp
 
-	ctxCheck := baseApp.NewContext(true, tmproto.Header{})
-	require.True(t, sdk.Coins{genCoin}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr1)))
+	ctxCheck := baseApp.NewContext(true, cmtproto.Header{})
+	require.True(t, sdk.Coins{genCoin}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr1)))
 
 	require.NoError(t, err)
 
@@ -76,16 +85,16 @@ func TestSlashingMsgs(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	header := tmproto.Header{Height: app.LastBlockHeight() + 1}
-	txConfig := moduletestutil.MakeTestEncodingConfig().TxConfig
+	header := cmtproto.Header{Height: app.LastBlockHeight() + 1}
+	txConfig := moduletestutil.MakeTestTxConfig()
 	_, _, err = sims.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{createValidatorMsg}, "", []uint64{0}, []uint64{0}, true, true, priv1)
 	require.NoError(t, err)
-	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr1)))
+	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr1)))
 
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	app.BeginBlock(abci.RequestBeginBlock{Header: header})
 
-	ctxCheck = baseApp.NewContext(true, tmproto.Header{})
+	ctxCheck = baseApp.NewContext(true, cmtproto.Header{})
 	validator, found := stakingKeeper.GetValidator(ctxCheck, sdk.ValAddress(addr1))
 	require.True(t, found)
 	require.Equal(t, sdk.ValAddress(addr1).String(), validator.OperatorAddress)
@@ -93,12 +102,12 @@ func TestSlashingMsgs(t *testing.T) {
 	require.True(math.IntEq(t, bondTokens, validator.BondedTokens()))
 	unjailMsg := &types.MsgUnjail{ValidatorAddr: sdk.ValAddress(addr1).String()}
 
-	ctxCheck = app.BaseApp.NewContext(true, tmproto.Header{})
+	ctxCheck = app.BaseApp.NewContext(true, cmtproto.Header{})
 	_, found = slashingKeeper.GetValidatorSigningInfo(ctxCheck, sdk.ConsAddress(valAddr))
 	require.True(t, found)
 
 	// unjail should fail with unknown validator
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	_, res, err := sims.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{unjailMsg}, "", []uint64{0}, []uint64{1}, false, false, priv1)
 	require.Error(t, err)
 	require.Nil(t, res)

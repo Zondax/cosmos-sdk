@@ -7,6 +7,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/x/tx/decode"
+	txsigning "cosmossdk.io/x/tx/signing"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/types/registry"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -15,19 +22,11 @@ import (
 	kmultisig "github.com/cosmos/cosmos-sdk/crypto/keys/multisig"
 	"github.com/cosmos/cosmos-sdk/crypto/types/multisig"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/errors"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/version"
 	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
-	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	"github.com/cosmos/cosmos-sdk/x/auth/signing"
 )
-
-// BroadcastReq defines a tx broadcasting request.
-type BroadcastReq struct {
-	Tx   legacytx.StdTx `json:"tx" yaml:"tx"`
-	Mode string         `json:"mode" yaml:"mode"`
-}
 
 // GetMultiSignCommand returns the multi-sign command
 func GetMultiSignCommand() *cobra.Command {
@@ -63,7 +62,6 @@ The SIGN_MODE_DIRECT sign mode is not supported.'
 
 	cmd.Flags().Bool(flagSigOnly, false, "Print only the generated signature, then exit")
 	cmd.Flags().String(flags.FlagOutputDocument, "", "The document is written to the given file instead of STDOUT")
-	cmd.Flags().Bool(flagAmino, false, "Generate Amino-encoded JSON suitable for submitting to the txs REST endpoint")
 	flags.AddTxFlagsToCmd(cmd)
 
 	return cmd
@@ -80,7 +78,10 @@ func makeMultiSignCmd() func(cmd *cobra.Command, args []string) (err error) {
 			return
 		}
 
-		txFactory := tx.NewFactoryCLI(clientCtx, cmd.Flags())
+		txFactory, err := tx.NewFactoryCLI(clientCtx, cmd.Flags())
+		if err != nil {
+			return err
+		}
 		if txFactory.SignMode() == signingtypes.SignMode_SIGN_MODE_UNSPECIFIED {
 			txFactory = txFactory.WithSignMode(signingtypes.SignMode_SIGN_MODE_LEGACY_AMINO_JSON)
 		}
@@ -116,6 +117,11 @@ func makeMultiSignCmd() func(cmd *cobra.Command, args []string) (err error) {
 			txFactory = txFactory.WithAccountNumber(accnum).WithSequence(seq)
 		}
 
+		decoder, err := decode.NewDecoder(decode.Options{ProtoFiles: registry.MergedProtoRegistry()})
+		if err != nil {
+			return err
+		}
+
 		// read each signature and add it to the multisig if valid
 		for i := 2; i < len(args); i++ {
 			sigs, err := unmarshalSignatureJSON(clientCtx, args[i])
@@ -128,15 +134,37 @@ func makeMultiSignCmd() func(cmd *cobra.Command, args []string) (err error) {
 			}
 
 			for _, sig := range sigs {
-				signingData := signing.SignerData{
-					Address:       sdk.AccAddress(sig.PubKey.Address()).String(),
+				anyPk, err := codectypes.NewAnyWithValue(sig.PubKey)
+				if err != nil {
+					return err
+				}
+				txSignerData := txsigning.SignerData{
 					ChainID:       txFactory.ChainID(),
 					AccountNumber: txFactory.AccountNumber(),
 					Sequence:      txFactory.Sequence(),
-					PubKey:        sig.PubKey,
+					Address:       sdk.AccAddress(sig.PubKey.Address()).String(),
+					PubKey: &anypb.Any{
+						TypeUrl: anyPk.TypeUrl,
+						Value:   anyPk.Value,
+					},
+				}
+				txBytes, err := txCfg.TxEncoder()(txBuilder.GetTx())
+				if err != nil {
+					return err
+				}
+				decodedTx, err := decoder.Decode(txBytes)
+				if err != nil {
+					return err
+				}
+				txData := txsigning.TxData{
+					Body:          decodedTx.Tx.Body,
+					AuthInfo:      decodedTx.Tx.AuthInfo,
+					AuthInfoBytes: decodedTx.TxRaw.AuthInfoBytes,
+					BodyBytes:     decodedTx.TxRaw.BodyBytes,
 				}
 
-				err = signing.VerifySignature(sig.PubKey, signingData, sig.Data, txCfg.SignModeHandler(), txBuilder.GetTx())
+				err = signing.VerifySignature(cmd.Context(), sig.PubKey, txSignerData, sig.Data,
+					txCfg.SignModeHandler(), txData)
 				if err != nil {
 					addr, _ := sdk.AccAddressFromHexUnsafe(sig.PubKey.Address().String())
 					return fmt.Errorf("couldn't verify signature for address %s", addr)
@@ -161,28 +189,10 @@ func makeMultiSignCmd() func(cmd *cobra.Command, args []string) (err error) {
 
 		sigOnly, _ := cmd.Flags().GetBool(flagSigOnly)
 
-		aminoJSON, _ := cmd.Flags().GetBool(flagAmino)
-
 		var json []byte
-
-		if aminoJSON {
-			stdTx, err := tx.ConvertTxToStdTx(clientCtx.LegacyAmino, txBuilder.GetTx())
-			if err != nil {
-				return err
-			}
-
-			req := BroadcastReq{
-				Tx:   stdTx,
-				Mode: "sync|async",
-			}
-
-			json, _ = clientCtx.LegacyAmino.MarshalJSON(req)
-
-		} else {
-			json, err = marshalSignatureJSON(txCfg, txBuilder, sigOnly)
-			if err != nil {
-				return err
-			}
+		json, err = marshalSignatureJSON(txCfg, txBuilder, sigOnly)
+		if err != nil {
+			return err
 		}
 
 		outputDoc, _ := cmd.Flags().GetString(flags.FlagOutputDocument)
@@ -254,7 +264,10 @@ func makeBatchMultisignCmd() func(cmd *cobra.Command, args []string) error {
 		}
 
 		txCfg := clientCtx.TxConfig
-		txFactory := tx.NewFactoryCLI(clientCtx, cmd.Flags())
+		txFactory, err := tx.NewFactoryCLI(clientCtx, cmd.Flags())
+		if err != nil {
+			return err
+		}
 		if txFactory.SignMode() == signingtypes.SignMode_SIGN_MODE_UNSPECIFIED {
 			txFactory = txFactory.WithSignMode(signingtypes.SignMode_SIGN_MODE_LEGACY_AMINO_JSON)
 		}
@@ -314,16 +327,43 @@ func makeBatchMultisignCmd() func(cmd *cobra.Command, args []string) error {
 			}
 			multisigPub := pubKey.(*kmultisig.LegacyAminoPubKey)
 			multisigSig := multisig.NewMultisig(len(multisigPub.PubKeys))
-			signingData := signing.SignerData{
-				Address:       sdk.AccAddress(pubKey.Address()).String(),
+
+			anyPk, err := codectypes.NewAnyWithValue(multisigPub)
+			if err != nil {
+				return err
+			}
+			txSignerData := txsigning.SignerData{
 				ChainID:       txFactory.ChainID(),
 				AccountNumber: txFactory.AccountNumber(),
 				Sequence:      txFactory.Sequence(),
-				PubKey:        pubKey,
+				Address:       sdk.AccAddress(pubKey.Address()).String(),
+				PubKey: &anypb.Any{
+					TypeUrl: anyPk.TypeUrl,
+					Value:   anyPk.Value,
+				},
 			}
 
+			txBytes, err := txCfg.TxEncoder()(txBldr.GetTx())
+			if err != nil {
+				return err
+			}
+			decodeCtx, err := decode.NewDecoder(decode.Options{ProtoFiles: registry.MergedProtoRegistry()})
+			if err != nil {
+				return err
+			}
+			decodedTx, err := decodeCtx.Decode(txBytes)
+			if err != nil {
+				return err
+			}
+			txData := txsigning.TxData{
+				Body:          decodedTx.Tx.Body,
+				AuthInfo:      decodedTx.Tx.AuthInfo,
+				AuthInfoBytes: decodedTx.TxRaw.AuthInfoBytes,
+				BodyBytes:     decodedTx.TxRaw.BodyBytes,
+			}
 			for _, sig := range signatureBatch {
-				err = signing.VerifySignature(sig[i].PubKey, signingData, sig[i].Data, txCfg.SignModeHandler(), txBldr.GetTx())
+				err = signing.VerifySignature(cmd.Context(), sig[i].PubKey, txSignerData, sig[i].Data,
+					txCfg.SignModeHandler(), txData)
 				if err != nil {
 					return fmt.Errorf("couldn't verify signature: %w %v", err, sig)
 				}
@@ -345,28 +385,10 @@ func makeBatchMultisignCmd() func(cmd *cobra.Command, args []string) error {
 			}
 
 			sigOnly, _ := cmd.Flags().GetBool(flagSigOnly)
-			aminoJSON, _ := cmd.Flags().GetBool(flagAmino)
-
 			var json []byte
-
-			if aminoJSON {
-				stdTx, err := tx.ConvertTxToStdTx(clientCtx.LegacyAmino, txBldr.GetTx())
-				if err != nil {
-					return err
-				}
-
-				req := BroadcastReq{
-					Tx:   stdTx,
-					Mode: "sync|async",
-				}
-
-				json, _ = clientCtx.LegacyAmino.MarshalJSON(req)
-
-			} else {
-				json, err = marshalSignatureJSON(txCfg, txBldr, sigOnly)
-				if err != nil {
-					return err
-				}
+			json, err = marshalSignatureJSON(txCfg, txBldr, sigOnly)
+			if err != nil {
+				return err
 			}
 
 			err = clientCtx.PrintString(fmt.Sprintf("%s\n", json))
@@ -417,7 +439,7 @@ func getMultisigRecord(clientCtx client.Context, name string) (*keyring.Record, 
 	kb := clientCtx.Keyring
 	multisigRecord, err := kb.Key(name)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting keybase multisig account")
+		return nil, errorsmod.Wrap(err, "error getting keybase multisig account")
 	}
 
 	return multisigRecord, nil

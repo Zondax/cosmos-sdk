@@ -9,8 +9,7 @@ import (
 	reflect "reflect"
 
 	types "github.com/cosmos/cosmos-sdk/types"
-	types0 "github.com/cosmos/cosmos-sdk/x/auth/types"
-	types1 "github.com/cosmos/cosmos-sdk/x/bank/types"
+	types0 "github.com/cosmos/cosmos-sdk/x/bank/types"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -37,11 +36,26 @@ func (m *MockAccountKeeper) EXPECT() *MockAccountKeeperMockRecorder {
 	return m.recorder
 }
 
+// BytesToString mocks base method.
+func (m *MockAccountKeeper) BytesToString(bz []byte) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BytesToString", bz)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BytesToString indicates an expected call of BytesToString.
+func (mr *MockAccountKeeperMockRecorder) BytesToString(bz interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BytesToString", reflect.TypeOf((*MockAccountKeeper)(nil).BytesToString), bz)
+}
+
 // GetAccount mocks base method.
-func (m *MockAccountKeeper) GetAccount(arg0 types.Context, arg1 types.AccAddress) types0.AccountI {
+func (m *MockAccountKeeper) GetAccount(arg0 context.Context, arg1 types.AccAddress) types.AccountI {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAccount", arg0, arg1)
-	ret0, _ := ret[0].(types0.AccountI)
+	ret0, _ := ret[0].(types.AccountI)
 	return ret0
 }
 
@@ -52,10 +66,10 @@ func (mr *MockAccountKeeperMockRecorder) GetAccount(arg0, arg1 interface{}) *gom
 }
 
 // NewAccount mocks base method.
-func (m *MockAccountKeeper) NewAccount(arg0 types.Context, arg1 types0.AccountI) types0.AccountI {
+func (m *MockAccountKeeper) NewAccount(arg0 context.Context, arg1 types.AccountI) types.AccountI {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewAccount", arg0, arg1)
-	ret0, _ := ret[0].(types0.AccountI)
+	ret0, _ := ret[0].(types.AccountI)
 	return ret0
 }
 
@@ -65,8 +79,20 @@ func (mr *MockAccountKeeperMockRecorder) NewAccount(arg0, arg1 interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewAccount", reflect.TypeOf((*MockAccountKeeper)(nil).NewAccount), arg0, arg1)
 }
 
+// RemoveAccount mocks base method.
+func (m *MockAccountKeeper) RemoveAccount(ctx context.Context, acc types.AccountI) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RemoveAccount", ctx, acc)
+}
+
+// RemoveAccount indicates an expected call of RemoveAccount.
+func (mr *MockAccountKeeperMockRecorder) RemoveAccount(ctx, acc interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAccount", reflect.TypeOf((*MockAccountKeeper)(nil).RemoveAccount), ctx, acc)
+}
+
 // SetAccount mocks base method.
-func (m *MockAccountKeeper) SetAccount(arg0 types.Context, arg1 types0.AccountI) {
+func (m *MockAccountKeeper) SetAccount(arg0 context.Context, arg1 types.AccountI) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetAccount", arg0, arg1)
 }
@@ -75,6 +101,21 @@ func (m *MockAccountKeeper) SetAccount(arg0 types.Context, arg1 types0.AccountI)
 func (mr *MockAccountKeeperMockRecorder) SetAccount(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAccount", reflect.TypeOf((*MockAccountKeeper)(nil).SetAccount), arg0, arg1)
+}
+
+// StringToBytes mocks base method.
+func (m *MockAccountKeeper) StringToBytes(text string) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StringToBytes", text)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StringToBytes indicates an expected call of StringToBytes.
+func (mr *MockAccountKeeperMockRecorder) StringToBytes(text interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StringToBytes", reflect.TypeOf((*MockAccountKeeper)(nil).StringToBytes), text)
 }
 
 // MockBankKeeper is a mock of BankKeeper interface.
@@ -129,10 +170,10 @@ func (mr *MockBankKeeperMockRecorder) MintCoins(ctx, moduleName, amt interface{}
 }
 
 // MultiSend mocks base method.
-func (m *MockBankKeeper) MultiSend(arg0 context.Context, arg1 *types1.MsgMultiSend) (*types1.MsgMultiSendResponse, error) {
+func (m *MockBankKeeper) MultiSend(arg0 context.Context, arg1 *types0.MsgMultiSend) (*types0.MsgMultiSendResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MultiSend", arg0, arg1)
-	ret0, _ := ret[0].(*types1.MsgMultiSendResponse)
+	ret0, _ := ret[0].(*types0.MsgMultiSendResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -144,10 +185,10 @@ func (mr *MockBankKeeperMockRecorder) MultiSend(arg0, arg1 interface{}) *gomock.
 }
 
 // Send mocks base method.
-func (m *MockBankKeeper) Send(arg0 context.Context, arg1 *types1.MsgSend) (*types1.MsgSendResponse, error) {
+func (m *MockBankKeeper) Send(arg0 context.Context, arg1 *types0.MsgSend) (*types0.MsgSendResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Send", arg0, arg1)
-	ret0, _ := ret[0].(*types1.MsgSendResponse)
+	ret0, _ := ret[0].(*types0.MsgSendResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -173,10 +214,10 @@ func (mr *MockBankKeeperMockRecorder) SendCoinsFromModuleToAccount(ctx, senderMo
 }
 
 // SetSendEnabled mocks base method.
-func (m *MockBankKeeper) SetSendEnabled(arg0 context.Context, arg1 *types1.MsgSetSendEnabled) (*types1.MsgSetSendEnabledResponse, error) {
+func (m *MockBankKeeper) SetSendEnabled(arg0 context.Context, arg1 *types0.MsgSetSendEnabled) (*types0.MsgSetSendEnabledResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetSendEnabled", arg0, arg1)
-	ret0, _ := ret[0].(*types1.MsgSetSendEnabledResponse)
+	ret0, _ := ret[0].(*types0.MsgSetSendEnabledResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -202,10 +243,10 @@ func (mr *MockBankKeeperMockRecorder) SpendableCoins(ctx, addr interface{}) *gom
 }
 
 // UpdateParams mocks base method.
-func (m *MockBankKeeper) UpdateParams(arg0 context.Context, arg1 *types1.MsgUpdateParams) (*types1.MsgUpdateParamsResponse, error) {
+func (m *MockBankKeeper) UpdateParams(arg0 context.Context, arg1 *types0.MsgUpdateParams) (*types0.MsgUpdateParamsResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateParams", arg0, arg1)
-	ret0, _ := ret[0].(*types1.MsgUpdateParamsResponse)
+	ret0, _ := ret[0].(*types0.MsgUpdateParamsResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

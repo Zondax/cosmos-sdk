@@ -2,34 +2,18 @@ package types
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
 	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"sigs.k8s.io/yaml"
 )
 
 // Implements Delegation interface
 var _ DelegationI = Delegation{}
 
-// String implements the Stringer interface for a DVPair object.
-func (dv DVPair) String() string {
-	out, _ := yaml.Marshal(dv)
-	return string(out)
-}
-
-// String implements the Stringer interface for a DVVTriplet object.
-func (dvv DVVTriplet) String() string {
-	out, _ := yaml.Marshal(dvv)
-	return string(out)
-}
-
 // NewDelegation creates a new delegation object
-//
-//nolint:interfacer
 func NewDelegation(delegatorAddr sdk.AccAddress, validatorAddr sdk.ValAddress, shares sdk.Dec) Delegation {
 	return Delegation{
 		DelegatorAddress: delegatorAddr.String(),
@@ -75,12 +59,6 @@ func (d Delegation) GetValidatorAddr() sdk.ValAddress {
 }
 func (d Delegation) GetShares() math.LegacyDec { return d.Shares }
 
-// String returns a human readable string representation of a Delegation.
-func (d Delegation) String() string {
-	out, _ := yaml.Marshal(d)
-	return string(out)
-}
-
 // Delegations is a collection of delegations
 type Delegations []Delegation
 
@@ -101,12 +79,6 @@ func NewUnbondingDelegationEntry(creationHeight int64, completionTime time.Time,
 		UnbondingId:             unbondingID,
 		UnbondingOnHoldRefCount: 0,
 	}
-}
-
-// String implements the stringer interface for a UnbondingDelegationEntry.
-func (e UnbondingDelegationEntry) String() string {
-	out, _ := yaml.Marshal(e)
-	return string(out)
 }
 
 // IsMature - is the current entry mature
@@ -141,8 +113,6 @@ func UnmarshalUBDE(cdc codec.BinaryCodec, value []byte) (ubd UnbondingDelegation
 }
 
 // NewUnbondingDelegation - create a new unbonding delegation object
-//
-//nolint:interfacer
 func NewUnbondingDelegation(
 	delegatorAddr sdk.AccAddress, validatorAddr sdk.ValAddress,
 	creationHeight int64, minTime time.Time, balance math.Int, id uint64,
@@ -207,23 +177,6 @@ func UnmarshalUBD(cdc codec.BinaryCodec, value []byte) (ubd UnbondingDelegation,
 	return ubd, err
 }
 
-// String returns a human readable string representation of an UnbondingDelegation.
-func (ubd UnbondingDelegation) String() string {
-	out := fmt.Sprintf(`Unbonding Delegations between:
-  Delegator:                 %s
-  Validator:                 %s
-	Entries:`, ubd.DelegatorAddress, ubd.ValidatorAddress)
-	for i, entry := range ubd.Entries {
-		out += fmt.Sprintf(`    Unbonding Delegation %d:
-      Creation Height:           %v
-      Min time to unbond (unix): %v
-      Expected balance:          %s`, i, entry.CreationHeight,
-			entry.CompletionTime, entry.Balance)
-	}
-
-	return out
-}
-
 // UnbondingDelegations is a collection of UnbondingDelegation
 type UnbondingDelegations []UnbondingDelegation
 
@@ -246,12 +199,6 @@ func NewRedelegationEntry(creationHeight int64, completionTime time.Time, balanc
 	}
 }
 
-// String implements the Stringer interface for a RedelegationEntry object.
-func (e RedelegationEntry) String() string {
-	out, _ := yaml.Marshal(e)
-	return string(out)
-}
-
 // IsMature - is the current entry mature
 func (e RedelegationEntry) IsMature(currentTime time.Time) bool {
 	return !e.CompletionTime.After(currentTime)
@@ -262,7 +209,6 @@ func (e RedelegationEntry) OnHold() bool {
 	return e.UnbondingOnHoldRefCount > 0
 }
 
-//nolint:interfacer
 func NewRedelegation(
 	delegatorAddr sdk.AccAddress, validatorSrcAddr, validatorDstAddr sdk.ValAddress,
 	creationHeight int64, minTime time.Time, balance math.Int, sharesDst sdk.Dec, id uint64,
@@ -309,30 +255,6 @@ func UnmarshalRED(cdc codec.BinaryCodec, value []byte) (red Redelegation, err er
 	return red, err
 }
 
-// String returns a human readable string representation of a Redelegation.
-func (red Redelegation) String() string {
-	out := fmt.Sprintf(`Redelegations between:
-  Delegator:                 %s
-  Source Validator:          %s
-  Destination Validator:     %s
-  Entries:
-`,
-		red.DelegatorAddress, red.ValidatorSrcAddress, red.ValidatorDstAddress,
-	)
-
-	for i, entry := range red.Entries {
-		out += fmt.Sprintf(`    Redelegation Entry #%d:
-      Creation height:           %v
-      Min time to unbond (unix): %v
-      Dest Shares:               %s
-`,
-			i, entry.CreationHeight, entry.CompletionTime, entry.SharesDst,
-		)
-	}
-
-	return strings.TrimRight(out, "\n")
-}
-
 // Redelegations are a collection of Redelegation
 type Redelegations []Redelegation
 
@@ -355,11 +277,6 @@ func NewDelegationResp(
 		Delegation: NewDelegation(delegatorAddr, validatorAddr, shares),
 		Balance:    balance,
 	}
-}
-
-// String implements the Stringer interface for DelegationResponse.
-func (d DelegationResponse) String() string {
-	return fmt.Sprintf("%s\n  Balance:   %s", d.Delegation.String(), d.Balance)
 }
 
 type delegationRespAlias DelegationResponse
@@ -389,8 +306,6 @@ func (d DelegationResponses) String() (out string) {
 }
 
 // NewRedelegationResponse crates a new RedelegationEntryResponse instance.
-//
-//nolint:interfacer
 func NewRedelegationResponse(
 	delegatorAddr sdk.AccAddress, validatorSrc, validatorDst sdk.ValAddress, entries []RedelegationEntryResponse,
 ) RedelegationResponse {

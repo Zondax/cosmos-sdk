@@ -2,20 +2,49 @@ package runtime
 
 import (
 	"fmt"
+	"os"
 
-	abci "github.com/tendermint/tendermint/abci/types"
+	"cosmossdk.io/core/store"
+	"cosmossdk.io/log"
+	"github.com/cosmos/gogoproto/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
+
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	runtimev1alpha1 "cosmossdk.io/api/cosmos/app/runtime/v1alpha1"
 	appv1alpha1 "cosmossdk.io/api/cosmos/app/v1alpha1"
 	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/core/event"
 	"cosmossdk.io/depinject"
+
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/std"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
+	"github.com/cosmos/cosmos-sdk/types/msgservice"
+)
+
+type appModule struct {
+	app *App
+}
+
+func (m appModule) RegisterServices(configurator module.Configurator) {
+	err := m.app.registerRuntimeServices(configurator)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (m appModule) IsOnePerModuleType() {}
+func (m appModule) IsAppModule()        {}
+
+var (
+	_ appmodule.AppModule = appModule{}
+	_ module.HasServices  = appModule{}
 )
 
 // BaseAppOption is a depinject.AutoGroupType which can be used to pass
@@ -33,6 +62,10 @@ func init() {
 			ProvideTransientStoreKey,
 			ProvideMemoryStoreKey,
 			ProvideDeliverTx,
+			ProvideKVStoreService,
+			ProvideMemoryStoreService,
+			ProvideTransientStoreService,
+			ProvideEventService,
 		),
 		appmodule.Invoke(SetupAppBuilder),
 	)
@@ -45,8 +78,26 @@ func ProvideApp() (
 	*AppBuilder,
 	codec.ProtoCodecMarshaler,
 	*baseapp.MsgServiceRouter,
+	appmodule.AppModule,
+	protodesc.Resolver,
+	protoregistry.MessageTypeResolver,
+	error,
 ) {
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	protoFiles, err := proto.MergedRegistry()
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil, err
+	}
+	protoTypes := protoregistry.GlobalTypes
+
+	// At startup, check that all proto annotations are correct.
+	err = msgservice.ValidateProtoAnnotations(protoFiles)
+	if err != nil {
+		// Once we switch to using protoreflect-based antehandlers, we might
+		// want to panic here instead of logging a warning.
+		_, _ = fmt.Fprintln(os.Stderr, err.Error())
+	}
+
+	interfaceRegistry := codectypes.NewInterfaceRegistryWithProtoFiles(protoFiles)
 	amino := codec.NewLegacyAmino()
 
 	std.RegisterInterfaces(interfaceRegistry)
@@ -54,18 +105,17 @@ func ProvideApp() (
 
 	cdc := codec.NewProtoCodec(interfaceRegistry)
 	msgServiceRouter := baseapp.NewMsgServiceRouter()
-	app := &AppBuilder{
-		&App{
-			storeKeys:         nil,
-			interfaceRegistry: interfaceRegistry,
-			cdc:               cdc,
-			amino:             amino,
-			basicManager:      module.BasicManager{},
-			msgServiceRouter:  msgServiceRouter,
-		},
+	app := &App{
+		storeKeys:         nil,
+		interfaceRegistry: interfaceRegistry,
+		cdc:               cdc,
+		amino:             amino,
+		basicManager:      module.BasicManager{},
+		msgServiceRouter:  msgServiceRouter,
 	}
+	appBuilder := &AppBuilder{app}
 
-	return interfaceRegistry, cdc, amino, app, cdc, msgServiceRouter
+	return interfaceRegistry, cdc, amino, appBuilder, cdc, msgServiceRouter, appModule{app}, protoFiles, protoTypes, nil
 }
 
 type AppInputs struct {
@@ -78,15 +128,16 @@ type AppInputs struct {
 	BaseAppOptions    []BaseAppOption
 	InterfaceRegistry codectypes.InterfaceRegistry
 	LegacyAmino       *codec.LegacyAmino
+	Logger            log.Logger
 }
 
 func SetupAppBuilder(inputs AppInputs) {
-	mm := module.NewManagerFromMap(inputs.Modules)
 	app := inputs.AppBuilder.app
 	app.baseAppOptions = inputs.BaseAppOptions
 	app.config = inputs.Config
-	app.ModuleManager = mm
+	app.ModuleManager = module.NewManagerFromMap(inputs.Modules)
 	app.appConfig = inputs.AppConfig
+	app.logger = inputs.Logger
 
 	for name, mod := range inputs.Modules {
 		if basicMod, ok := mod.(module.AppModuleBasic); ok {
@@ -141,4 +192,23 @@ func ProvideDeliverTx(appBuilder *AppBuilder) func(abci.RequestDeliverTx) abci.R
 	return func(tx abci.RequestDeliverTx) abci.ResponseDeliverTx {
 		return appBuilder.app.BaseApp.DeliverTx(tx)
 	}
+}
+
+func ProvideKVStoreService(config *runtimev1alpha1.Module, key depinject.ModuleKey, app *AppBuilder) store.KVStoreService {
+	storeKey := ProvideKVStoreKey(config, key, app)
+	return kvStoreService{key: storeKey}
+}
+
+func ProvideMemoryStoreService(key depinject.ModuleKey, app *AppBuilder) store.MemoryStoreService {
+	storeKey := ProvideMemoryStoreKey(key, app)
+	return memStoreService{key: storeKey}
+}
+
+func ProvideTransientStoreService(key depinject.ModuleKey, app *AppBuilder) store.TransientStoreService {
+	storeKey := ProvideTransientStoreKey(key, app)
+	return transientStoreService{key: storeKey}
+}
+
+func ProvideEventService() event.Service {
+	return EventService{}
 }

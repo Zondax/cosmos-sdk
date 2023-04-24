@@ -3,8 +3,8 @@ package errors
 import (
 	"testing"
 
+	cmttypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	"github.com/stretchr/testify/assert"
-	tmtypes "github.com/tendermint/tendermint/rpc/jsonrpc/types"
 )
 
 func TestRegisterError(t *testing.T) {
@@ -20,7 +20,7 @@ func TestRegisterError(t *testing.T) {
 	registeredErrorsCount++
 	assert.Equal(t, len(ListErrors()), registeredErrorsCount)
 	// re-register an error should not change anything
-	error = RegisterError(69, "nice!", false, "nice!")
+	RegisterError(69, "nice!", false, "nice!")
 	assert.Equal(t, len(ListErrors()), registeredErrorsCount)
 
 	// test sealing
@@ -57,7 +57,7 @@ func TestToRosetta(t *testing.T) {
 	// wrong type
 	assert.NotNil(t, ToRosetta(&MyError{}))
 
-	tmErr := &tmtypes.RPCError{}
+	tmErr := &cmttypes.RPCError{}
 	// RpcError case
 	assert.NotNil(t, ToRosetta(tmErr))
 }

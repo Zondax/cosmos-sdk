@@ -1,25 +1,28 @@
 package crisis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
 
 	modulev1 "cosmossdk.io/api/cosmos/crisis/module/v1"
+	"cosmossdk.io/core/address"
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/depinject"
+
+	store "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/server"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
-	store "github.com/cosmos/cosmos-sdk/store/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
@@ -34,10 +37,7 @@ import (
 // ConsensusVersion defines the current x/crisis module consensus version.
 const ConsensusVersion = 2
 
-var (
-	_ module.EndBlockAppModule = AppModule{}
-	_ module.AppModuleBasic    = AppModuleBasic{}
-)
+var _ module.AppModuleBasic = AppModuleBasic{}
 
 // Module init related flags
 const (
@@ -73,7 +73,7 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncod
 	return types.ValidateGenesis(&data)
 }
 
-// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the capability module.
+// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the crisis module.
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(_ client.Context, _ *gwruntime.ServeMux) {}
 
 // GetTxCmd returns the root tx command for the crisis module.
@@ -119,7 +119,10 @@ func NewAppModule(keeper *keeper.Keeper, skipGenesisInvariants bool, ss exported
 	}
 }
 
-var _ appmodule.AppModule = AppModule{}
+var (
+	_ appmodule.AppModule     = AppModule{}
+	_ appmodule.HasEndBlocker = AppModule{}
+)
 
 // IsOnePerModuleType implements the depinject.OnePerModuleType interface.
 func (am AppModule) IsOnePerModuleType() {}
@@ -136,9 +139,6 @@ func AddModuleInitFlags(startCmd *cobra.Command) {
 func (AppModule) Name() string {
 	return types.ModuleName
 }
-
-// RegisterInvariants performs a no-op.
-func (AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
@@ -177,9 +177,10 @@ func (AppModule) ConsensusVersion() uint64 { return ConsensusVersion }
 
 // EndBlock returns the end blocker for the crisis module. It returns no validator
 // updates.
-func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
-	EndBlocker(ctx, *am.keeper)
-	return []abci.ValidatorUpdate{}
+func (am AppModule) EndBlock(ctx context.Context) error {
+	c := sdk.UnwrapSDKContext(ctx)
+	EndBlocker(c, *am.keeper)
+	return nil
 }
 
 // App Wiring Setup
@@ -191,7 +192,7 @@ func init() {
 	)
 }
 
-type CrisisInputs struct {
+type ModuleInputs struct {
 	depinject.In
 
 	Config  *modulev1.Module
@@ -199,20 +200,21 @@ type CrisisInputs struct {
 	Cdc     codec.Codec
 	AppOpts servertypes.AppOptions `optional:"true"`
 
-	BankKeeper types.SupplyKeeper
+	BankKeeper   types.SupplyKeeper
+	AddressCodec address.Codec
 
 	// LegacySubspace is used solely for migration of x/params managed parameters
 	LegacySubspace exported.Subspace
 }
 
-type CrisisOutputs struct {
+type ModuleOutputs struct {
 	depinject.Out
 
 	Module       appmodule.AppModule
 	CrisisKeeper *keeper.Keeper
 }
 
-func ProvideModule(in CrisisInputs) CrisisOutputs {
+func ProvideModule(in ModuleInputs) ModuleOutputs {
 	var invalidCheckPeriod uint
 	if in.AppOpts != nil {
 		invalidCheckPeriod = cast.ToUint(in.AppOpts.Get(server.FlagInvCheckPeriod))
@@ -236,6 +238,7 @@ func ProvideModule(in CrisisInputs) CrisisOutputs {
 		in.BankKeeper,
 		feeCollectorName,
 		authority.String(),
+		in.AddressCodec,
 	)
 
 	var skipGenesisInvariants bool
@@ -245,5 +248,5 @@ func ProvideModule(in CrisisInputs) CrisisOutputs {
 
 	m := NewAppModule(k, skipGenesisInvariants, in.LegacySubspace)
 
-	return CrisisOutputs{CrisisKeeper: k, Module: m}
+	return ModuleOutputs{CrisisKeeper: k, Module: m}
 }

@@ -6,13 +6,16 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/stretchr/testify/suite"
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	tmtypes "github.com/tendermint/tendermint/types"
 
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -46,6 +49,7 @@ type SimTestSuite struct {
 	legacyAmino       *codec.LegacyAmino
 	codec             codec.Codec
 	interfaceRegistry codectypes.InterfaceRegistry
+	txConfig          client.TxConfig
 	accountKeeper     authkeeper.AccountKeeper
 	bankKeeper        bankkeeper.Keeper
 	stakingKeeper     *stakingkeeper.Keeper
@@ -60,27 +64,31 @@ func (suite *SimTestSuite) SetupTest() {
 	accounts := simtypes.RandomAccounts(suite.r, 4)
 
 	// create validator (non random as using a seed)
-	createValidator := func() (*tmtypes.ValidatorSet, error) {
+	createValidator := func() (*cmttypes.ValidatorSet, error) {
 		account := accounts[0]
-		tmPk, err := cryptocodec.ToTmPubKeyInterface(account.PubKey)
+		cmtPk, err := cryptocodec.ToCmtPubKeyInterface(account.PubKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create pubkey: %w", err)
 		}
 
-		validator := tmtypes.NewValidator(tmPk, 1)
+		validator := cmttypes.NewValidator(cmtPk, 1)
 
-		return tmtypes.NewValidatorSet([]*tmtypes.Validator{validator}), nil
+		return cmttypes.NewValidatorSet([]*cmttypes.Validator{validator}), nil
 	}
 
 	startupCfg := simtestutil.DefaultStartUpConfig()
 	startupCfg.ValidatorSet = createValidator
 
 	app, err := simtestutil.SetupWithConfiguration(
-		testutil.AppConfig,
+		depinject.Configs(
+			testutil.AppConfig,
+			depinject.Supply(log.NewNopLogger()),
+		),
 		startupCfg,
 		&suite.legacyAmino,
 		&suite.codec,
 		&suite.interfaceRegistry,
+		&suite.txConfig,
 		&suite.accountKeeper,
 		&suite.bankKeeper,
 		&suite.stakingKeeper,
@@ -91,7 +99,7 @@ func (suite *SimTestSuite) SetupTest() {
 
 	suite.Require().NoError(err)
 	suite.app = app
-	suite.ctx = app.BaseApp.NewContext(false, tmproto.Header{})
+	suite.ctx = app.BaseApp.NewContext(false, cmtproto.Header{})
 
 	// remove genesis validator account
 	suite.accounts = accounts[1:]
@@ -123,10 +131,12 @@ func (suite *SimTestSuite) TestWeightedOperations() {
 		weight     int
 		opMsgRoute string
 		opMsgName  string
-	}{{simulation.DefaultWeightMsgUnjail, types.ModuleName, types.TypeMsgUnjail}}
+	}{
+		{simulation.DefaultWeightMsgUnjail, types.ModuleName, sdk.MsgTypeURL(&types.MsgUnjail{})},
+	}
 
-	weightesOps := simulation.WeightedOperations(appParams, suite.codec, suite.accountKeeper, suite.bankKeeper, suite.slashingKeeper, suite.stakingKeeper)
-	for i, w := range weightesOps {
+	weightedOps := simulation.WeightedOperations(suite.interfaceRegistry, appParams, suite.codec, suite.txConfig, suite.accountKeeper, suite.bankKeeper, suite.slashingKeeper, suite.stakingKeeper)
+	for i, w := range weightedOps {
 		operationMsg, _, err := w.Op()(suite.r, suite.app.BaseApp, ctx, suite.accounts, ctx.ChainID())
 		suite.Require().NoError(err)
 
@@ -170,10 +180,10 @@ func (suite *SimTestSuite) TestSimulateMsgUnjail() {
 	suite.distrKeeper.SetDelegatorStartingInfo(ctx, validator0.GetOperator(), val0AccAddress.Bytes(), distrtypes.NewDelegatorStartingInfo(2, math.LegacyOneDec(), 200))
 
 	// begin a new block
-	suite.app.BeginBlock(abci.RequestBeginBlock{Header: tmproto.Header{Height: suite.app.LastBlockHeight() + 1, AppHash: suite.app.LastCommitID().Hash, Time: blockTime}})
+	suite.app.BeginBlock(abci.RequestBeginBlock{Header: cmtproto.Header{Height: suite.app.LastBlockHeight() + 1, AppHash: suite.app.LastCommitID().Hash, Time: blockTime}})
 
 	// execute operation
-	op := simulation.SimulateMsgUnjail(codec.NewProtoCodec(suite.interfaceRegistry), suite.accountKeeper, suite.bankKeeper, suite.slashingKeeper, suite.stakingKeeper)
+	op := simulation.SimulateMsgUnjail(codec.NewProtoCodec(suite.interfaceRegistry), suite.txConfig, suite.accountKeeper, suite.bankKeeper, suite.slashingKeeper, suite.stakingKeeper)
 	operationMsg, futureOperations, err := op(suite.r, suite.app.BaseApp, ctx, suite.accounts, "")
 	suite.Require().NoError(err)
 
@@ -181,7 +191,6 @@ func (suite *SimTestSuite) TestSimulateMsgUnjail() {
 	types.ModuleCdc.UnmarshalJSON(operationMsg.Msg, &msg)
 
 	suite.Require().True(operationMsg.OK)
-	suite.Require().Equal(types.TypeMsgUnjail, msg.Type())
 	suite.Require().Equal("cosmosvaloper1p8wcgrjr4pjju90xg6u9cgq55dxwq8j7epjs3u", msg.ValidatorAddr)
 	suite.Require().Len(futureOperations, 0)
 }

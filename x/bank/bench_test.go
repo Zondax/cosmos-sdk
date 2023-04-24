@@ -5,16 +5,15 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
-	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -68,16 +67,16 @@ func BenchmarkOneBankSendTxPerBlock(b *testing.B) {
 	}
 
 	// construct genesis state
-	genAccs := []types.GenesisAccount{&acc}
+	genAccs := []authtypes.GenesisAccount{&acc}
 	s := createTestSuite(&testing.T{}, genAccs)
 	baseApp := s.App.BaseApp
-	ctx := baseApp.NewContext(false, tmproto.Header{})
+	ctx := baseApp.NewContext(false, cmtproto.Header{})
 
 	// some value conceivably higher than the benchmarks would ever go
 	require.NoError(b, testutil.FundAccount(s.BankKeeper, ctx, addr1, sdk.NewCoins(sdk.NewInt64Coin("foocoin", 100000000000))))
 
 	baseApp.Commit()
-	txGen := moduletestutil.MakeTestEncodingConfig().TxConfig
+	txGen := moduletestutil.MakeTestTxConfig()
 
 	// Precompute all txs
 	txs, err := genSequenceOfTxs(txGen, []sdk.Msg{sendMsg1}, []uint64{0}, []uint64{uint64(0)}, b.N, priv1)
@@ -89,7 +88,7 @@ func BenchmarkOneBankSendTxPerBlock(b *testing.B) {
 	// Run this with a profiler, so its easy to distinguish what time comes from
 	// Committing, and what time comes from Check/Deliver Tx.
 	for i := 0; i < b.N; i++ {
-		baseApp.BeginBlock(abci.RequestBeginBlock{Header: tmproto.Header{Height: height}})
+		baseApp.BeginBlock(abci.RequestBeginBlock{Header: cmtproto.Header{Height: height}})
 		_, _, err := baseApp.SimCheck(txGen.TxEncoder(), txs[i])
 		if err != nil {
 			panic("something is broken in checking transaction")
@@ -116,13 +115,13 @@ func BenchmarkOneBankMultiSendTxPerBlock(b *testing.B) {
 	genAccs := []authtypes.GenesisAccount{&acc}
 	s := createTestSuite(&testing.T{}, genAccs)
 	baseApp := s.App.BaseApp
-	ctx := baseApp.NewContext(false, tmproto.Header{})
+	ctx := baseApp.NewContext(false, cmtproto.Header{})
 
 	// some value conceivably higher than the benchmarks would ever go
 	require.NoError(b, testutil.FundAccount(s.BankKeeper, ctx, addr1, sdk.NewCoins(sdk.NewInt64Coin("foocoin", 100000000000))))
 
 	baseApp.Commit()
-	txGen := moduletestutil.MakeTestEncodingConfig().TxConfig
+	txGen := moduletestutil.MakeTestTxConfig()
 
 	// Precompute all txs
 	txs, err := genSequenceOfTxs(txGen, []sdk.Msg{multiSendMsg1}, []uint64{0}, []uint64{uint64(0)}, b.N, priv1)
@@ -134,7 +133,7 @@ func BenchmarkOneBankMultiSendTxPerBlock(b *testing.B) {
 	// Run this with a profiler, so its easy to distinguish what time comes from
 	// Committing, and what time comes from Check/Deliver Tx.
 	for i := 0; i < b.N; i++ {
-		baseApp.BeginBlock(abci.RequestBeginBlock{Header: tmproto.Header{Height: height}})
+		baseApp.BeginBlock(abci.RequestBeginBlock{Header: cmtproto.Header{Height: height}})
 		_, _, err := baseApp.SimCheck(txGen.TxEncoder(), txs[i])
 		if err != nil {
 			panic("something is broken in checking transaction")

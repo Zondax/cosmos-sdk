@@ -37,7 +37,7 @@ following rewards between validators and associated delegators:
 * validator commission on all rewards earned by their delegators stake
 
 Fees are pooled within a global pool. The mechanisms used allow for validators
-and delegators to independently and lazily withdraw their rewards.  
+and delegators to independently and lazily withdraw their rewards.
 
 ## Shortcomings
 
@@ -145,13 +145,13 @@ When coins are distributed from the pool they are truncated back to
 type DecCoins []DecCoin
 
 type DecCoin struct {
-    Amount sdk.Dec
+    Amount math.LegacyDec
     Denom  string
 }
 ```
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/v0.46.0/proto/cosmos/distribution/v1beta1/distribution.proto#L92-L96
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/distribution/v1beta1/distribution.proto#L116-L123
 ```
 
 ### Validator Distribution
@@ -167,7 +167,7 @@ Validator distribution information for the relevant validator is updated each ti
 ```go
 type ValidatorDistInfo struct {
     OperatorAddress     sdk.AccAddress
-    SelfBondRewards     sdk.DecCoins
+    SelfBondRewards     sdkmath.DecCoins
     ValidatorCommission types.ValidatorAccumulatedCommission
 }
 ```
@@ -190,13 +190,13 @@ type DelegationDistInfo struct {
 
 ### Params
 
-The distribution module stores it's params in state with the prefix of `0x09`, 
+The distribution module stores it's params in state with the prefix of `0x09`,
 it can be updated with governance or the address with authority.
 
 * Params: `0x09 | ProtocolBuffer(Params)`
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/v0.46.0/proto/cosmos/distribution/v1beta1/distribution.proto#L11-L30
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/distribution/v1beta1/distribution.proto#L12-L42
 ```
 
 ## Begin Block
@@ -282,7 +282,7 @@ The withdraw address cannot be any of the module accounts. These accounts are bl
 Response:
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/v0.46.0/proto/cosmos/distribution/v1beta1/tx.proto#L31-L41
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/distribution/v1beta1/tx.proto#L49-L60
 ```
 
 ```go
@@ -334,7 +334,7 @@ The final calculated stake is equivalent to the actual staked coins in the deleg
 Response:
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/v0.46.0/proto/cosmos/distribution/v1beta1/tx.proto#L46-L56
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/distribution/v1beta1/tx.proto#L66-L77
 ```
 
 ### WithdrawValidatorCommission
@@ -395,10 +395,10 @@ func (k Keeper) initializeDelegation(ctx sdk.Context, val sdk.ValAddress, del sd
 
 ### MsgUpdateParams
 
-Distribution module params can be updated through `MsgUpdateParams`, which can be done using governance proposal and the signer will always be gov module account address. 
+Distribution module params can be updated through `MsgUpdateParams`, which can be done using governance proposal and the signer will always be gov module account address.
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/8822ef2695a1eb8cb30b7432f58f631c73951f1d/proto/cosmos/distribution/v1beta1/tx.proto#L106-L119
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/distribution/v1beta1/tx.proto#L133-L147
 ```
 
 The message handling can fail if:
@@ -454,7 +454,6 @@ Any remaining rewards are dust amounts.
 ### Validator is slashed
 
 * triggered-by: `staking.Slash`
-  
 * The current validator period reference count is incremented.
   The reference count is incremented because the slash event has created a reference to it.
 * The validator period is incremented.
@@ -513,12 +512,15 @@ The distribution module contains the following parameters:
 | Key                 | Type         | Example                    |
 | ------------------- | ------------ | -------------------------- |
 | communitytax        | string (dec) | "0.020000000000000000" [0] |
-| baseproposerreward  | string (dec) | "0.010000000000000000" [0] |
-| bonusproposerreward | string (dec) | "0.040000000000000000" [0] |
 | withdrawaddrenabled | bool         | true                       |
 
-* [0] `communitytax`, `baseproposerreward` and `bonusproposerreward` must be
-  positive and their sum cannot exceed 1.00.
+* [0] `communitytax` must be positive and cannot exceed 1.00.
+* `baseproposerreward` and `bonusproposerreward` were parameters that are deprecated in v0.47 and are not used.
+
+:::note
+The reserve pool is the pool of collected funds for use by governance taken via the `CommunityTax`.
+Currently with the Cosmos SDK, tokens collected by the CommunityTax are accounted for but unspendable.
+:::
 
 ## Client
 
@@ -545,7 +547,7 @@ simd query distribution commission [address] [flags]
 Example:
 
 ```shell
-simd query distribution commission cosmosvaloper1..
+simd query distribution commission cosmosvaloper1...
 ```
 
 Example Output:
@@ -595,8 +597,8 @@ simd query distribution params
 Example Output:
 
 ```yml
-base_proposer_reward: "0.010000000000000000"
-bonus_proposer_reward: "0.040000000000000000"
+base_proposer_reward: "0.000000000000000000"
+bonus_proposer_reward: "0.000000000000000000"
 community_tax: "0.020000000000000000"
 withdraw_addr_enabled: true
 ```
@@ -612,7 +614,7 @@ simd query distribution rewards [delegator-addr] [validator-addr] [flags]
 Example:
 
 ```shell
-simd query distribution rewards cosmos1..
+simd query distribution rewards cosmos1...
 ```
 
 Example Output:
@@ -639,7 +641,7 @@ simd query distribution slashes [validator] [start-height] [end-height] [flags]
 Example:
 
 ```shell
-simd query distribution slashes cosmosvaloper1.. 1 1000
+simd query distribution slashes cosmosvaloper1... 1 1000
 ```
 
 Example Output:
@@ -664,7 +666,7 @@ simd query distribution validator-outstanding-rewards [validator] [flags]
 Example:
 
 ```shell
-simd query distribution validator-outstanding-rewards cosmosvaloper1..
+simd query distribution validator-outstanding-rewards cosmosvaloper1...
 ```
 
 Example Output:
@@ -672,6 +674,26 @@ Example Output:
 ```yml
 rewards:
 - amount: "1000000.000000000000000000"
+  denom: stake
+```
+
+##### validator-distribution-info
+
+The `validator-distribution-info` command allows users to query validator commission and self-delegation rewards for validator.
+
+````shell
+simd query distribution validator-distribution-info cosmosvaloper1...
+```
+
+Example Output:
+
+```yml
+commission:
+- amount: "100000.000000000000000000"
+  denom: stake
+operator_address: cosmosvaloper1...
+self_bond_rewards:
+- amount: "100000.000000000000000000"
   denom: stake
 ```
 
@@ -694,7 +716,7 @@ simd tx distribution fund-community-pool [amount] [flags]
 Example:
 
 ```shell
-simd tx distribution fund-community-pool 100stake --from cosmos1..
+simd tx distribution fund-community-pool 100stake --from cosmos1...
 ```
 
 ##### set-withdraw-addr
@@ -708,7 +730,7 @@ simd tx distribution set-withdraw-addr [withdraw-addr] [flags]
 Example:
 
 ```shell
-simd tx distribution set-withdraw-addr cosmos1.. --from cosmos1..
+simd tx distribution set-withdraw-addr cosmos1... --from cosmos1...
 ```
 
 ##### withdraw-all-rewards
@@ -722,13 +744,13 @@ simd tx distribution withdraw-all-rewards [flags]
 Example:
 
 ```shell
-simd tx distribution withdraw-all-rewards --from cosmos1..
+simd tx distribution withdraw-all-rewards --from cosmos1...
 ```
 
 ##### withdraw-rewards
 
 The `withdraw-rewards` command allows users to withdraw all rewards from a given delegation address,
-and optionally withdraw validator commission if the delegation address given is a validator operator and the user proves the `--commision` flag.
+and optionally withdraw validator commission if the delegation address given is a validator operator and the user proves the `--commission` flag.
 
 ```shell
 simd tx distribution withdraw-rewards [validator-addr] [flags]
@@ -737,7 +759,7 @@ simd tx distribution withdraw-rewards [validator-addr] [flags]
 Example:
 
 ```shell
-simd tx distribution withdraw-rewards cosmosvaloper1.. --from cosmos1.. --commision
+simd tx distribution withdraw-rewards cosmosvaloper1... --from cosmos1... --commission
 ```
 
 ### gRPC
@@ -762,10 +784,45 @@ Example Output:
 {
   "params": {
     "communityTax": "20000000000000000",
-    "baseProposerReward": "10000000000000000",
-    "bonusProposerReward": "40000000000000000",
+    "baseProposerReward": "00000000000000000",
+    "bonusProposerReward": "00000000000000000",
     "withdrawAddrEnabled": true
   }
+}
+```
+
+#### ValidatorDistributionInfo
+
+The `ValidatorDistributionInfo` queries validator commission and self-delegation rewards for validator.
+
+Example:
+
+```shell
+grpcurl -plaintext \
+    -d '{"validator_address":"cosmosvalop1..."}' \
+    localhost:9090 \
+    cosmos.distribution.v1beta1.Query/ValidatorDistributionInfo
+```
+
+Example Output:
+
+```json
+{
+  "commission": {
+    "commission": [
+      {
+        "denom": "stake",
+        "amount": "1000000000000000"
+      }
+    ]
+  },
+  "self_bond_rewards": [
+    {
+      "denom": "stake",
+      "amount": "1000000000000000"
+    }
+  ],
+  "validator_address": "cosmosvalop1..."
 }
 ```
 
@@ -862,7 +919,7 @@ Example:
 
 ```shell
 grpcurl -plaintext \
-    -d '{"delegator_address":"cosmos1..","validator_address":"cosmosvalop1.."}' \
+    -d '{"delegator_address":"cosmos1...","validator_address":"cosmosvalop1..."}' \
     localhost:9090 \
     cosmos.distribution.v1beta1.Query/DelegationRewards
 ```
@@ -888,7 +945,7 @@ Example:
 
 ```shell
 grpcurl -plaintext \
-    -d '{"delegator_address":"cosmos1.."}' \
+    -d '{"delegator_address":"cosmos1..."}' \
     localhost:9090 \
     cosmos.distribution.v1beta1.Query/DelegationTotalRewards
 ```
@@ -899,7 +956,7 @@ Example Output:
 {
   "rewards": [
     {
-      "validatorAddress": "cosmosvaloper1..",
+      "validatorAddress": "cosmosvaloper1...",
       "reward": [
         {
           "denom": "stake",
@@ -925,7 +982,7 @@ Example:
 
 ```shell
 grpcurl -plaintext \
-    -d '{"delegator_address":"cosmos1.."}' \
+    -d '{"delegator_address":"cosmos1..."}' \
     localhost:9090 \
     cosmos.distribution.v1beta1.Query/DelegatorValidators
 ```
@@ -934,9 +991,7 @@ Example Output:
 
 ```json
 {
-  "validators": [
-    "cosmosvaloper1.."
-  ]
+  "validators": ["cosmosvaloper1..."]
 }
 ```
 
@@ -948,7 +1003,7 @@ Example:
 
 ```shell
 grpcurl -plaintext \
-    -d '{"delegator_address":"cosmos1.."}' \
+    -d '{"delegator_address":"cosmos1..."}' \
     localhost:9090 \
     cosmos.distribution.v1beta1.Query/DelegatorWithdrawAddress
 ```
@@ -957,7 +1012,7 @@ Example Output:
 
 ```json
 {
-  "withdrawAddress": "cosmos1.."
+  "withdrawAddress": "cosmos1..."
 }
 ```
 

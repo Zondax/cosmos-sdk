@@ -3,9 +3,11 @@ package keeper
 import (
 	"context"
 
+	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/x/upgrade/types"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/cosmos/cosmos-sdk/x/upgrade/types"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -35,17 +37,15 @@ func (k Keeper) AppliedPlan(c context.Context, req *types.QueryAppliedPlanReques
 }
 
 // UpgradedConsensusState implements the Query/UpgradedConsensusState gRPC method
-//
-//nolint:staticcheck
-func (k Keeper) UpgradedConsensusState(c context.Context, req *types.QueryUpgradedConsensusStateRequest) (*types.QueryUpgradedConsensusStateResponse, error) {
+func (k Keeper) UpgradedConsensusState(c context.Context, req *types.QueryUpgradedConsensusStateRequest) (*types.QueryUpgradedConsensusStateResponse, error) { //nolint:staticcheck // we're using a deprecated call for compatibility
 	ctx := sdk.UnwrapSDKContext(c)
 
 	consState, found := k.GetUpgradedConsensusState(ctx, req.LastHeight)
 	if !found {
-		return &types.QueryUpgradedConsensusStateResponse{}, nil
+		return &types.QueryUpgradedConsensusStateResponse{}, nil //nolint:staticcheck // we're using a deprecated call for compatibility
 	}
 
-	return &types.QueryUpgradedConsensusStateResponse{
+	return &types.QueryUpgradedConsensusStateResponse{ //nolint:staticcheck // we're using a deprecated call for compatibility
 		UpgradedConsensusState: consState,
 	}, nil
 }
@@ -62,7 +62,7 @@ func (k Keeper) ModuleVersions(c context.Context, req *types.QueryModuleVersions
 			return &types.QueryModuleVersionsResponse{ModuleVersions: res}, nil
 		}
 		// module requested, but not found
-		return nil, errors.Wrapf(errors.ErrNotFound, "x/upgrade: QueryModuleVersions module %s not found", req.ModuleName)
+		return nil, errorsmod.Wrapf(errors.ErrNotFound, "x/upgrade: QueryModuleVersions module %s not found", req.ModuleName)
 	}
 
 	// if no module requested return all module versions from state

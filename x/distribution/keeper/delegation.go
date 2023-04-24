@@ -30,7 +30,7 @@ func (k Keeper) initializeDelegation(ctx sdk.Context, val sdk.ValAddress, del sd
 
 // calculate the rewards accrued by a delegation between two periods
 func (k Keeper) calculateDelegationRewardsBetween(ctx sdk.Context, val stakingtypes.ValidatorI,
-	startingPeriod, endingPeriod uint64, stake sdk.Dec,
+	startingPeriod, endingPeriod uint64, stake math.LegacyDec,
 ) (rewards sdk.DecCoins) {
 	// sanity check
 	if startingPeriod > endingPeriod {
@@ -121,7 +121,7 @@ func (k Keeper) CalculateDelegationRewards(ctx sdk.Context, val stakingtypes.Val
 		//
 		// A small amount of this error is tolerated and corrected for,
 		// however any greater amount should be considered a breach in expected
-		// behaviour.
+		// behavior.
 		marginOfErr := sdk.SmallestDec().MulInt64(3)
 		if stake.LTE(currentStake.Add(marginOfErr)) {
 			stake = currentStake
@@ -152,7 +152,7 @@ func (k Keeper) withdrawDelegationRewards(ctx sdk.Context, val stakingtypes.Vali
 	// defensive edge case may happen on the very final digits
 	// of the decCoins due to operation order of the distribution mechanism.
 	rewards := rewardsRaw.Intersect(outstanding)
-	if !rewards.IsEqual(rewardsRaw) {
+	if !rewards.Equal(rewardsRaw) {
 		logger := k.Logger(ctx)
 		logger.Info(
 			"rounding error withdrawing rewards from validator",
@@ -206,6 +206,7 @@ func (k Keeper) withdrawDelegationRewards(ctx sdk.Context, val stakingtypes.Vali
 			types.EventTypeWithdrawRewards,
 			sdk.NewAttribute(sdk.AttributeKeyAmount, finalRewards.String()),
 			sdk.NewAttribute(types.AttributeKeyValidator, val.GetOperator().String()),
+			sdk.NewAttribute(types.AttributeKeyDelegator, del.GetDelegatorAddr().String()),
 		),
 	)
 

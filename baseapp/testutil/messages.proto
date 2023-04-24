@@ -1,6 +1,6 @@
 syntax = "proto3";
-package testdata;
 
+import "cosmos/msg/v1/msg.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
@@ -19,6 +19,8 @@ message MsgCounter2 {
 message MsgCreateCounterResponse {}
 
 message MsgKeyValue {
+  option (cosmos.msg.v1.signer) = "signer";
+
   bytes  key    = 1;
   bytes  value  = 2;
   string signer = 3;

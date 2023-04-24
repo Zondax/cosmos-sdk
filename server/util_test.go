@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	cmtcfg "github.com/cometbft/cometbft/config"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
-	tmcfg "github.com/tendermint/tendermint/config"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -25,17 +25,16 @@ import (
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 )
 
-var cancelledInPreRun = errors.New("Cancelled in prerun")
+var errCanceledInPreRun = errors.New("canceled in prerun")
 
 // Used in each test to run the function under test via Cobra
 // but to always halt the command
 func preRunETestImpl(cmd *cobra.Command, args []string) error {
-	err := server.InterceptConfigsPreRunHandler(cmd, "", nil, tmcfg.DefaultConfig())
-	if err != nil {
+	if err := server.InterceptConfigsPreRunHandler(cmd, "", nil, cmtcfg.DefaultConfig()); err != nil {
 		return err
 	}
 
-	return cancelledInPreRun
+	return errCanceledInPreRun
 }
 
 func TestInterceptConfigsPreRunHandlerCreatesConfigFilesWhenMissing(t *testing.T) {
@@ -49,7 +48,7 @@ func TestInterceptConfigsPreRunHandlerCreatesConfigFilesWhenMissing(t *testing.T
 
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
-	if err := cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -68,9 +67,9 @@ func TestInterceptConfigsPreRunHandlerCreatesConfigFilesWhenMissing(t *testing.T
 		t.Fatal("config.toml created as empty file")
 	}
 
-	// Test that tendermint config is initialized
+	// Test that CometBFT config is initialized
 	if serverCtx.Config == nil {
-		t.Fatal("tendermint config not created")
+		t.Fatal("CometBFT config not created")
 	}
 
 	// Test that app.toml is created
@@ -126,7 +125,7 @@ func TestInterceptConfigsPreRunHandlerReadsConfigToml(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -163,7 +162,7 @@ func TestInterceptConfigsPreRunHandlerReadsAppToml(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -191,7 +190,7 @@ func TestInterceptConfigsPreRunHandlerReadsFlags(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -226,7 +225,7 @@ func TestInterceptConfigsPreRunHandlerReadsEnvVars(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -295,7 +294,7 @@ func newPrecedenceCommon(t *testing.T) precedenceCommon {
 	return retval
 }
 
-func (v precedenceCommon) setAll(t *testing.T, setFlag *string, setEnvVar *string, setConfigFile *string) {
+func (v precedenceCommon) setAll(t *testing.T, setFlag, setEnvVar, setConfigFile *string) {
 	if setFlag != nil {
 		if err := v.cmd.Flags().Set(v.flagName, *setFlag); err != nil {
 			t.Fatalf("Failed setting flag %q", v.flagName)
@@ -330,7 +329,7 @@ func TestInterceptConfigsPreRunHandlerPrecedenceFlag(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := testCommon.cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := testCommon.cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -346,7 +345,7 @@ func TestInterceptConfigsPreRunHandlerPrecedenceEnvVar(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := testCommon.cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := testCommon.cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -362,7 +361,7 @@ func TestInterceptConfigsPreRunHandlerPrecedenceConfigFile(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := testCommon.cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := testCommon.cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
@@ -378,11 +377,11 @@ func TestInterceptConfigsPreRunHandlerPrecedenceConfigDefault(t *testing.T) {
 	serverCtx := &server.Context{}
 	ctx := context.WithValue(context.Background(), server.ServerContextKey, serverCtx)
 
-	if err := testCommon.cmd.ExecuteContext(ctx); err != cancelledInPreRun {
+	if err := testCommon.cmd.ExecuteContext(ctx); err != errCanceledInPreRun {
 		t.Fatalf("function failed with [%T] %v", err, err)
 	}
 
-	if "tcp://127.0.0.1:26657" != serverCtx.Config.RPC.ListenAddress {
+	if serverCtx.Config.RPC.ListenAddress != "tcp://127.0.0.1:26657" {
 		t.Error("RPCListenAddress is not using default")
 	}
 }
@@ -435,7 +434,12 @@ func TestEmptyMinGasPrices(t *testing.T) {
 	// Run StartCmd.
 	cmd = server.StartCmd(nil, tempDir)
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
-		return server.InterceptConfigsPreRunHandler(cmd, "", nil, tmcfg.DefaultConfig())
+		ctx, err := server.InterceptConfigsAndCreateContext(cmd, "", nil, cmtcfg.DefaultConfig())
+		if err != nil {
+			return err
+		}
+
+		return server.SetCmdServerContext(cmd, ctx)
 	}
 	err = cmd.ExecuteContext(ctx)
 	require.Errorf(t, err, sdkerrors.ErrAppConfig.Error())

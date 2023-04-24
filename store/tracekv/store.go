@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/cosmos/cosmos-sdk/store/types"
-	"github.com/cosmos/cosmos-sdk/types/errors"
+	"cosmossdk.io/errors"
+
+	"cosmossdk.io/store/types"
 )
 
 const (
@@ -59,7 +60,7 @@ func (tkv *Store) Get(key []byte) []byte {
 
 // Set implements the KVStore interface. It traces a write operation and
 // delegates the Set call to the parent KVStore.
-func (tkv *Store) Set(key []byte, value []byte) {
+func (tkv *Store) Set(key, value []byte) {
 	types.AssertValidKey(key)
 	writeOperation(tkv.writer, writeOp, tkv.context, key, value)
 	tkv.parent.Set(key, value)
@@ -115,7 +116,7 @@ func newTraceIterator(w io.Writer, parent types.Iterator, tc types.TraceContext)
 }
 
 // Domain implements the Iterator interface.
-func (ti *traceIterator) Domain() (start []byte, end []byte) {
+func (ti *traceIterator) Domain() (start, end []byte) {
 	return ti.parent.Domain()
 }
 
@@ -171,11 +172,6 @@ func (tkv *Store) CacheWrap() types.CacheWrap {
 // Store cannot be branched.
 func (tkv *Store) CacheWrapWithTrace(_ io.Writer, _ types.TraceContext) types.CacheWrap {
 	panic("cannot CacheWrapWithTrace a TraceKVStore")
-}
-
-// CacheWrapWithListeners implements the CacheWrapper interface.
-func (tkv *Store) CacheWrapWithListeners(_ types.StoreKey, _ []types.WriteListener) types.CacheWrap {
-	panic("cannot CacheWrapWithListeners a TraceKVStore")
 }
 
 // writeOperation writes a KVStore operation to the underlying io.Writer as

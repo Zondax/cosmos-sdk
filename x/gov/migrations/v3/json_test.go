@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
 
@@ -20,15 +21,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 )
 
+var voter = sdk.MustAccAddressFromBech32("cosmos1fl48vsnmsdzcv85q5d2q4z5ajdha8yu34mf0eh")
+
 func TestMigrateJSON(t *testing.T) {
 	encodingConfig := moduletestutil.MakeTestEncodingConfig(gov.AppModuleBasic{})
 	clientCtx := client.Context{}.
 		WithInterfaceRegistry(encodingConfig.InterfaceRegistry).
 		WithTxConfig(encodingConfig.TxConfig).
 		WithCodec(encodingConfig.Codec)
-
-	voter, err := sdk.AccAddressFromBech32("cosmos1fl48vsnmsdzcv85q5d2q4z5ajdha8yu34mf0eh")
-	require.NoError(t, err)
 
 	govGenState := v1beta1.DefaultGenesisState()
 	propTime := time.Unix(1e9, 0)
@@ -44,7 +44,7 @@ func TestMigrateJSON(t *testing.T) {
 			VotingEndTime:    propTime,
 			Status:           v1beta1.StatusDepositPeriod,
 			FinalTallyResult: v1beta1.EmptyTallyResult(),
-			TotalDeposit:     sdk.NewCoins(sdk.NewCoin("stake", sdk.NewInt(123))),
+			TotalDeposit:     sdk.NewCoins(sdk.NewCoin("stake", sdkmath.NewInt(123))),
 		},
 	}
 	govGenState.Votes = v1beta1.Votes{
@@ -74,6 +74,7 @@ func TestMigrateJSON(t *testing.T) {
 	// Make sure about:
 	// - Proposals use MsgExecLegacyContent
 	expected := `{
+	"constitution": "",
 	"deposit_params": {
 		"max_deposit_period": "172800s",
 		"min_deposit": [
@@ -88,6 +89,7 @@ func TestMigrateJSON(t *testing.T) {
 	"proposals": [
 		{
 			"deposit_end_time": "2001-09-09T01:46:40Z",
+			"expedited": false,
 			"final_tally_result": {
 				"abstain_count": "0",
 				"no_count": "0",
@@ -107,8 +109,11 @@ func TestMigrateJSON(t *testing.T) {
 				}
 			],
 			"metadata": "",
+			"proposer": "",
 			"status": "PROPOSAL_STATUS_DEPOSIT_PERIOD",
 			"submit_time": "2001-09-09T01:46:40Z",
+			"summary": "my desc",
+			"title": "my title",
 			"total_deposit": [
 				{
 					"amount": "123",

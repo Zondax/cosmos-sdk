@@ -1,10 +1,12 @@
 package types
 
 import (
+	context "context"
+
+	"cosmossdk.io/core/address"
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
 // DistributionKeeper expected distribution keeper (noalias)
@@ -15,14 +17,16 @@ type DistributionKeeper interface {
 
 // AccountKeeper defines the expected account keeper (noalias)
 type AccountKeeper interface {
-	IterateAccounts(ctx sdk.Context, process func(authtypes.AccountI) (stop bool))
-	GetAccount(ctx sdk.Context, addr sdk.AccAddress) authtypes.AccountI // only used for simulation
+	address.Codec
+
+	IterateAccounts(ctx context.Context, process func(sdk.AccountI) (stop bool))
+	GetAccount(ctx context.Context, addr sdk.AccAddress) sdk.AccountI // only used for simulation
 
 	GetModuleAddress(name string) sdk.AccAddress
-	GetModuleAccount(ctx sdk.Context, moduleName string) authtypes.ModuleAccountI
+	GetModuleAccount(ctx context.Context, moduleName string) sdk.ModuleAccountI
 
 	// TODO remove with genesis 2-phases refactor https://github.com/cosmos/cosmos-sdk/issues/2862
-	SetModuleAccount(sdk.Context, authtypes.ModuleAccountI)
+	SetModuleAccount(context.Context, sdk.ModuleAccountI)
 }
 
 // BankKeeper defines the expected interface needed to retrieve account balances.
@@ -60,8 +64,9 @@ type ValidatorSet interface {
 	TotalBondedTokens(sdk.Context) math.Int                      // total bonded tokens within the validator set
 	StakingTokenSupply(sdk.Context) math.Int                     // total staking token supply
 
-	// slash the validator and delegators of the validator, specifying offence height, offence power, and slash fraction
-	Slash(sdk.Context, sdk.ConsAddress, int64, int64, sdk.Dec, Infraction) math.Int
+	// slash the validator and delegators of the validator, specifying offense height, offense power, and slash fraction
+	Slash(sdk.Context, sdk.ConsAddress, int64, int64, sdk.Dec) math.Int
+	SlashWithInfractionReason(sdk.Context, sdk.ConsAddress, int64, int64, sdk.Dec, Infraction) math.Int
 	Jail(sdk.Context, sdk.ConsAddress)   // jail a validator
 	Unjail(sdk.Context, sdk.ConsAddress) // unjail a validator
 

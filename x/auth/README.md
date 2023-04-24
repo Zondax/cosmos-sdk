@@ -62,7 +62,7 @@ any of the validator's minimum gas prices. In other words, a transaction must
 provide a fee of at least one denomination that matches a validator's minimum
 gas price.
 
-Tendermint does not currently provide fee based mempool prioritization, and fee
+CometBFT does not currently provide fee based mempool prioritization, and fee
 based mempool filtering is local to node and not part of consensus. But with
 minimum gas prices set, such a mechanism could be implemented by node operators.
 
@@ -138,14 +138,14 @@ message BaseAccount {
 
 ### Vesting Account
 
-See [Vesting](https://docs.cosmos.network/main/modules/vesting/).
+See [Vesting](https://docs.cosmos.network/main/modules/auth/vesting/).
 
 ## AnteHandlers
 
 The `x/auth` module presently has no transaction handlers of its own, but does expose the special `AnteHandler`, used for performing basic validity checks on a transaction, such that it could be thrown out of the mempool.
 The `AnteHandler` can be seen as a set of decorators that check transactions within the current context, per [ADR 010](https://github.com/cosmos/cosmos-sdk/blob/main/docs/architecture/adr-010-modular-antehandler.md).
 
-Note that the `AnteHandler` is called on both `CheckTx` and `DeliverTx`, as Tendermint proposers presently have the ability to include in their proposed block transactions which fail `CheckTx`.
+Note that the `AnteHandler` is called on both `CheckTx` and `DeliverTx`, as CometBFT proposers presently have the ability to include in their proposed block transactions which fail `CheckTx`.
 
 ### Decorators
 
@@ -480,30 +480,6 @@ simd tx broadcast tx.signed.json
 ```
 
 More information about the `broadcast` command can be found running `simd tx broadcast --help`.
-
-#### `encode`
-
-The `encode` command encodes a transaction created with the `--generate-only` flag or signed with the sign command.
-The transaction is seralized it to Protobuf and returned as base64.
-
-```bash
-$ simd tx encode tx.json
-Co8BCowBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEmwKLWNvc21vczFsNnZzcWhoN3Jud3N5cjJreXozampnM3FkdWF6OGd3Z3lsODI3NRItY29zbW9zMTU4c2FsZHlnOHBteHU3Znd2dDBkNng3amVzd3A0Z3d5a2xrNnkzGgwKBXN0YWtlEgMxMDASBhIEEMCaDA==
-$ simd tx encode tx.signed.json
-```
-
-More information about the `encode` command can be found running `simd tx encode --help`.
-
-#### `decode`
-
-The `decode` commands decodes a transaction encoded with the `encode` command.
-
-
-```bash
-simd tx decode Co8BCowBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEmwKLWNvc21vczFsNnZzcWhoN3Jud3N5cjJreXozampnM3FkdWF6OGd3Z3lsODI3NRItY29zbW9zMTU4c2FsZHlnOHBteHU3Znd2dDBkNng3amVzd3A0Z3d5a2xrNnkzGgwKBXN0YWtlEgMxMDASBhIEEMCaDA==
-```
-
-More information about the `decode` command can be found running `simd tx decode --help`.
 
 #### `aux-to-fee`
 

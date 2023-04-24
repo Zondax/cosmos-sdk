@@ -13,6 +13,7 @@ import (
 func InitGenesis(ctx sdk.Context, ak types.AccountKeeper, bk types.BankKeeper, k *keeper.Keeper, data *v1.GenesisState) {
 	k.SetProposalID(ctx, data.StartingProposalId)
 	k.SetParams(ctx, *data.Params)
+	k.SetConstitution(ctx, data.Constitution)
 
 	// check if the deposits pool account exists
 	moduleAcc := k.GetGovernanceAccount(ctx)
@@ -47,7 +48,7 @@ func InitGenesis(ctx sdk.Context, ak types.AccountKeeper, bk types.BankKeeper, k
 	}
 
 	// check if total deposits equals balance, if it doesn't panic because there were export/import errors
-	if !balance.IsEqual(totalDeposits) {
+	if !balance.Equal(totalDeposits) {
 		panic(fmt.Sprintf("expected module account was %s but we got %s", balance.String(), totalDeposits.String()))
 	}
 }
@@ -56,11 +57,8 @@ func InitGenesis(ctx sdk.Context, ak types.AccountKeeper, bk types.BankKeeper, k
 func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *v1.GenesisState {
 	startingProposalID, _ := k.GetProposalID(ctx)
 	proposals := k.GetProposals(ctx)
+	constitution := k.GetConstitution(ctx)
 	params := k.GetParams(ctx)
-
-	depositParams := v1.NewDepositParams(params.MinDeposit, params.MaxDepositPeriod)        //nolint:staticcheck
-	votingParams := v1.NewVotingParams(params.VotingPeriod)                                 //nolint:staticcheck
-	tallyParams := v1.NewTallyParams(params.Quorum, params.Threshold, params.VetoThreshold) //nolint:staticcheck
 
 	var proposalsDeposits v1.Deposits
 	var proposalsVotes v1.Votes
@@ -77,9 +75,7 @@ func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *v1.GenesisState {
 		Deposits:           proposalsDeposits,
 		Votes:              proposalsVotes,
 		Proposals:          proposals,
-		DepositParams:      &depositParams,
-		VotingParams:       &votingParams,
-		TallyParams:        &tallyParams,
 		Params:             &params,
+		Constitution:       constitution,
 	}
 }

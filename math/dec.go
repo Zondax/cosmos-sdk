@@ -69,6 +69,10 @@ func LegacySmallestDec() LegacyDec { return LegacyDec{new(big.Int).Set(oneInt)} 
 
 // calculate the precision multiplier
 func calcPrecisionMultiplier(prec int64) *big.Int {
+	if prec < 0 {
+		panic(fmt.Sprintf("negative precision %v", prec))
+	}
+
 	if prec > LegacyPrecision {
 		panic(fmt.Sprintf("too much precision, maximum %v, provided %v", LegacyPrecision, prec))
 	}
@@ -79,6 +83,10 @@ func calcPrecisionMultiplier(prec int64) *big.Int {
 
 // get the precision multiplier, do not mutate result
 func precisionMultiplier(prec int64) *big.Int {
+	if prec < 0 {
+		panic(fmt.Sprintf("negative precision %v", prec))
+	}
+
 	if prec > LegacyPrecision {
 		panic(fmt.Sprintf("too much precision, maximum %v, provided %v", LegacyPrecision, prec))
 	}
@@ -143,19 +151,15 @@ func LegacyNewDecFromIntWithPrec(i Int, prec int64) LegacyDec {
 //
 // CONTRACT - This function does not mutate the input str.
 func LegacyNewDecFromStr(str string) (LegacyDec, error) {
-	if len(str) == 0 {
-		return LegacyDec{}, fmt.Errorf("%s: %w", str, ErrLegacyEmptyDecimalStr)
-	}
-
 	// first extract any negative symbol
 	neg := false
-	if str[0] == '-' {
+	if len(str) > 0 && str[0] == '-' {
 		neg = true
 		str = str[1:]
 	}
 
 	if len(str) == 0 {
-		return LegacyDec{}, fmt.Errorf("%s: %w", str, ErrLegacyEmptyDecimalStr)
+		return LegacyDec{}, ErrLegacyEmptyDecimalStr
 	}
 
 	strs := strings.Split(str, ".")
@@ -178,7 +182,7 @@ func LegacyNewDecFromStr(str string) (LegacyDec, error) {
 
 	// add some extra zero's to correct to the Precision factor
 	zerosToAdd := LegacyPrecision - lenDecs
-	zeros := fmt.Sprintf(`%0`+strconv.Itoa(zerosToAdd)+`s`, "")
+	zeros := strings.Repeat("0", zerosToAdd)
 	combinedStr += zeros
 
 	combined, ok := new(big.Int).SetString(combinedStr, 10) // base 10
@@ -711,7 +715,7 @@ func (d LegacyDec) Ceil() LegacyDec {
 	return LegacyNewDecFromBigInt(quo.Add(quo, oneInt))
 }
 
-// MaxSortableDec is the largest Dec that can be passed into SortableDecBytes()
+// LegacyMaxSortableDec is the largest Dec that can be passed into SortableDecBytes()
 // Its negative form is the least Dec that can be passed in.
 var LegacyMaxSortableDec LegacyDec
 
@@ -795,19 +799,21 @@ func (d LegacyDec) MarshalYAML() (interface{}, error) {
 
 // Marshal implements the gogo proto custom type interface.
 func (d LegacyDec) Marshal() ([]byte, error) {
-	if d.i == nil {
-		d.i = new(big.Int)
+	i := d.i
+	if i == nil {
+		i = new(big.Int)
 	}
-	return d.i.MarshalText()
+	return i.MarshalText()
 }
 
 // MarshalTo implements the gogo proto custom type interface.
 func (d *LegacyDec) MarshalTo(data []byte) (n int, err error) {
-	if d.i == nil {
-		d.i = new(big.Int)
+	i := d.i
+	if i == nil {
+		i = new(big.Int)
 	}
 
-	if d.i.Cmp(zeroInt) == 0 {
+	if i.Cmp(zeroInt) == 0 {
 		copy(data, []byte{0x30})
 		return 1, nil
 	}
@@ -890,7 +896,7 @@ func LegacyDecEq(t *testing.T, exp, got LegacyDec) (*testing.T, bool, string, st
 	return t, exp.Equal(got), "expected:\t%v\ngot:\t\t%v", exp.String(), got.String()
 }
 
-func LegacyDecApproxEq(t *testing.T, d1 LegacyDec, d2 LegacyDec, tol LegacyDec) (*testing.T, bool, string, string, string) {
+func LegacyDecApproxEq(t *testing.T, d1, d2, tol LegacyDec) (*testing.T, bool, string, string, string) {
 	diff := d1.Sub(d2).Abs()
 	return t, diff.LTE(tol), "expected |d1 - d2| <:\t%v\ngot |d1 - d2| = \t\t%v", tol.String(), diff.String()
 }

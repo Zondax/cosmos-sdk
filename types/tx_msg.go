@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	fmt "fmt"
+	strings "strings"
 
 	"github.com/cosmos/gogoproto/proto"
 
@@ -14,10 +15,6 @@ type (
 	// Msg defines the interface a transaction message must fulfill.
 	Msg interface {
 		proto.Message
-
-		// ValidateBasic does a simple validation check that
-		// doesn't require access to any other information.
-		ValidateBasic() error
 
 		// GetSigners returns the addrs of signers that must sign.
 		// CONTRACT: All signatures must be present to be valid.
@@ -41,12 +38,10 @@ type (
 
 	// Tx defines the interface a transaction must fulfill.
 	Tx interface {
+		HasValidateBasic
+
 		// GetMsgs gets the all the transaction's messages.
 		GetMsgs() []Msg
-
-		// ValidateBasic does a simple and lightweight validation check that doesn't
-		// require access to any other information.
-		ValidateBasic() error
 	}
 
 	// FeeTx defines the interface to be implemented by Tx to use the FeeDecorators
@@ -70,6 +65,15 @@ type (
 		Tx
 
 		GetTimeoutHeight() uint64
+	}
+
+	// HasValidateBasic defines a type that has a ValidateBasic method.
+	// ValidateBasic is deprecated and now facultative.
+	// Prefer validating messages directly in the msg server.
+	HasValidateBasic interface {
+		// ValidateBasic does a simple validation check that
+		// doesn't require access to any other information.
+		ValidateBasic() error
 	}
 )
 
@@ -101,4 +105,16 @@ func GetMsgFromTypeURL(cdc codec.Codec, input string) (Msg, error) {
 	}
 
 	return msg, nil
+}
+
+// GetModuleNameFromTypeURL assumes that module name is the second element of the msg type URL
+// e.g. "cosmos.bank.v1beta1.MsgSend" => "bank"
+// It returns an empty string if the input is not a valid type URL
+func GetModuleNameFromTypeURL(input string) string {
+	moduleName := strings.Split(input, ".")
+	if len(moduleName) > 1 {
+		return moduleName[1]
+	}
+
+	return ""
 }

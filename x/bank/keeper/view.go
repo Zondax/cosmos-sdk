@@ -3,12 +3,21 @@ package keeper
 import (
 	"fmt"
 
+	"cosmossdk.io/collections/indexes"
+	"cosmossdk.io/log"
+
+	"github.com/cockroachdb/errors"
+
+	"cosmossdk.io/collections"
+
+	"github.com/cosmos/cosmos-sdk/runtime"
+
 	"cosmossdk.io/math"
-	"github.com/tendermint/tendermint/libs/log"
+
+	errorsmod "cosmossdk.io/errors"
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/store/prefix"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -33,30 +42,69 @@ type ViewKeeper interface {
 	IterateAllBalances(ctx sdk.Context, cb func(address sdk.AccAddress, coin sdk.Coin) (stop bool))
 }
 
+func newBalancesIndexes(sb *collections.SchemaBuilder) BalancesIndexes {
+	return BalancesIndexes{
+		Denom: indexes.NewReversePair[math.Int](
+			sb, types.DenomAddressPrefix, "address_by_denom_index",
+			collections.PairKeyCodec(sdk.AddressKeyAsIndexKey(sdk.AccAddressKey), collections.StringKey), // nolint:staticcheck // Note: refer to the AddressKeyAsIndexKey docs to understand why we do this.
+		),
+	}
+}
+
+type BalancesIndexes struct {
+	Denom *indexes.ReversePair[sdk.AccAddress, string, math.Int]
+}
+
+func (b BalancesIndexes) IndexesList() []collections.Index[collections.Pair[sdk.AccAddress, string], math.Int] {
+	return []collections.Index[collections.Pair[sdk.AccAddress, string], math.Int]{b.Denom}
+}
+
 // BaseViewKeeper implements a read only keeper implementation of ViewKeeper.
 type BaseViewKeeper struct {
 	cdc      codec.BinaryCodec
 	storeKey storetypes.StoreKey
 	ak       types.AccountKeeper
+	logger   log.Logger
+
+	Schema        collections.Schema
+	Supply        collections.Map[string, math.Int]
+	DenomMetadata collections.Map[string, types.Metadata]
+	SendEnabled   collections.Map[string, bool]
+	Balances      *collections.IndexedMap[collections.Pair[sdk.AccAddress, string], math.Int, BalancesIndexes]
+	Params        collections.Item[types.Params]
 }
 
 // NewBaseViewKeeper returns a new BaseViewKeeper.
-func NewBaseViewKeeper(cdc codec.BinaryCodec, storeKey storetypes.StoreKey, ak types.AccountKeeper) BaseViewKeeper {
-	return BaseViewKeeper{
-		cdc:      cdc,
-		storeKey: storeKey,
-		ak:       ak,
+func NewBaseViewKeeper(cdc codec.BinaryCodec, storeKey storetypes.StoreKey, ak types.AccountKeeper, logger log.Logger) BaseViewKeeper {
+	sb := collections.NewSchemaBuilder(runtime.NewKVStoreService(storeKey.(*storetypes.KVStoreKey)))
+	k := BaseViewKeeper{
+		cdc:           cdc,
+		storeKey:      storeKey,
+		ak:            ak,
+		logger:        logger,
+		Supply:        collections.NewMap(sb, types.SupplyKey, "supply", collections.StringKey, sdk.IntValue),
+		DenomMetadata: collections.NewMap(sb, types.DenomMetadataPrefix, "denom_metadata", collections.StringKey, codec.CollValue[types.Metadata](cdc)),
+		SendEnabled:   collections.NewMap(sb, types.SendEnabledPrefix, "send_enabled", collections.StringKey, codec.BoolValue), // NOTE: we use a bool value which uses protobuf to retain state backwards compat
+		Balances:      collections.NewIndexedMap(sb, types.BalancesPrefix, "balances", collections.PairKeyCodec(sdk.AccAddressKey, collections.StringKey), types.NewBalanceCompatValueCodec(), newBalancesIndexes(sb)),
+		Params:        collections.NewItem(sb, types.ParamsKey, "params", codec.CollValue[types.Params](cdc)),
 	}
-}
 
-// Logger returns a module-specific logger.
-func (k BaseViewKeeper) Logger(ctx sdk.Context) log.Logger {
-	return ctx.Logger().With("module", "x/"+types.ModuleName)
+	schema, err := sb.Build()
+	if err != nil {
+		panic(err)
+	}
+	k.Schema = schema
+	return k
 }
 
 // HasBalance returns whether or not an account has at least amt balance.
 func (k BaseViewKeeper) HasBalance(ctx sdk.Context, addr sdk.AccAddress, amt sdk.Coin) bool {
 	return k.GetBalance(ctx, addr, amt.Denom).IsGTE(amt)
+}
+
+// Logger returns a module-specific logger.
+func (k BaseViewKeeper) Logger() log.Logger {
+	return k.logger
 }
 
 // GetAllBalances returns all the account balances for the given account address.
@@ -99,35 +147,22 @@ func (k BaseViewKeeper) GetAccountsBalances(ctx sdk.Context) []types.Balance {
 // GetBalance returns the balance of a specific denomination for a given account
 // by address.
 func (k BaseViewKeeper) GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin {
-	accountStore := k.getAccountStore(ctx, addr)
-	bz := accountStore.Get([]byte(denom))
-	balance, err := UnmarshalBalanceCompat(k.cdc, bz, denom)
+	amt, err := k.Balances.Get(ctx, collections.Join(addr, denom))
 	if err != nil {
-		panic(err)
+		return sdk.NewCoin(denom, sdk.ZeroInt())
 	}
-
-	return balance
+	return sdk.NewCoin(denom, amt)
 }
 
 // IterateAccountBalances iterates over the balances of a single account and
 // provides the token balance to a callback. If true is returned from the
 // callback, iteration is halted.
 func (k BaseViewKeeper) IterateAccountBalances(ctx sdk.Context, addr sdk.AccAddress, cb func(sdk.Coin) bool) {
-	accountStore := k.getAccountStore(ctx, addr)
-
-	iterator := accountStore.Iterator(nil, nil)
-	defer sdk.LogDeferred(ctx.Logger(), func() error { return iterator.Close() })
-
-	for ; iterator.Valid(); iterator.Next() {
-		denom := string(iterator.Key())
-		balance, err := UnmarshalBalanceCompat(k.cdc, iterator.Value(), denom)
-		if err != nil {
-			panic(err)
-		}
-
-		if cb(balance) {
-			break
-		}
+	err := k.Balances.Walk(ctx, collections.NewPrefixedPairRange[sdk.AccAddress, string](addr), func(key collections.Pair[sdk.AccAddress, string], value math.Int) bool {
+		return cb(sdk.NewCoin(key.K2(), value))
+	})
+	if err != nil && !errors.Is(err, collections.ErrInvalidIterator) { // TODO(tip): is this the correct strategy
+		panic(err)
 	}
 }
 
@@ -135,29 +170,11 @@ func (k BaseViewKeeper) IterateAccountBalances(ctx sdk.Context, addr sdk.AccAddr
 // denominations that are provided to a callback. If true is returned from the
 // callback, iteration is halted.
 func (k BaseViewKeeper) IterateAllBalances(ctx sdk.Context, cb func(sdk.AccAddress, sdk.Coin) bool) {
-	store := ctx.KVStore(k.storeKey)
-	balancesStore := prefix.NewStore(store, types.BalancesPrefix)
-
-	iterator := balancesStore.Iterator(nil, nil)
-	defer iterator.Close()
-
-	for ; iterator.Valid(); iterator.Next() {
-		address, denom, err := types.AddressAndDenomFromBalancesStore(iterator.Key())
-		if err != nil {
-			k.Logger(ctx).With("key", iterator.Key(), "err", err).Error("failed to get address from balances store")
-			// TODO: revisit, for now, panic here to keep same behavior as in 0.42
-			// ref: https://github.com/cosmos/cosmos-sdk/issues/7409
-			panic(err)
-		}
-
-		balance, err := UnmarshalBalanceCompat(k.cdc, iterator.Value(), denom)
-		if err != nil {
-			panic(err)
-		}
-
-		if cb(address, balance) {
-			break
-		}
+	err := k.Balances.Walk(ctx, nil, func(key collections.Pair[sdk.AccAddress, string], value math.Int) bool {
+		return cb(key.K1(), sdk.NewCoin(key.K2(), value))
+	})
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -219,7 +236,7 @@ func (k BaseViewKeeper) spendableCoins(ctx sdk.Context, addr sdk.AccAddress) (sp
 func (k BaseViewKeeper) ValidateBalance(ctx sdk.Context, addr sdk.AccAddress) error {
 	acc := k.ak.GetAccount(ctx, addr)
 	if acc == nil {
-		return sdkerrors.Wrapf(sdkerrors.ErrUnknownAddress, "account %s does not exist", addr)
+		return errorsmod.Wrapf(sdkerrors.ErrUnknownAddress, "account %s does not exist", addr)
 	}
 
 	balances := k.GetAllBalances(ctx, addr)
@@ -236,36 +253,4 @@ func (k BaseViewKeeper) ValidateBalance(ctx sdk.Context, addr sdk.AccAddress) er
 	}
 
 	return nil
-}
-
-// getAccountStore gets the account store of the given address.
-func (k BaseViewKeeper) getAccountStore(ctx sdk.Context, addr sdk.AccAddress) prefix.Store {
-	store := ctx.KVStore(k.storeKey)
-	return prefix.NewStore(store, types.CreateAccountBalancesPrefix(addr))
-}
-
-// getDenomAddressPrefixStore returns a prefix store that acts as a reverse index
-// between a denomination and account balance for that denomination.
-func (k BaseViewKeeper) getDenomAddressPrefixStore(ctx sdk.Context, denom string) prefix.Store {
-	return prefix.NewStore(ctx.KVStore(k.storeKey), types.CreateDenomAddressPrefix(denom))
-}
-
-// UnmarshalBalanceCompat unmarshal balance amount from storage, it's backward-compatible with the legacy format.
-func UnmarshalBalanceCompat(cdc codec.BinaryCodec, bz []byte, denom string) (sdk.Coin, error) {
-	amount := math.ZeroInt()
-	if bz == nil {
-		return sdk.NewCoin(denom, amount), nil
-	}
-
-	if err := amount.Unmarshal(bz); err != nil {
-		// try to unmarshal with the legacy format.
-		var balance sdk.Coin
-		if cdc.Unmarshal(bz, &balance) != nil {
-			// return with the original error
-			return sdk.Coin{}, err
-		}
-		return balance, nil
-	}
-
-	return sdk.NewCoin(denom, amount), nil
 }

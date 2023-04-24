@@ -3,6 +3,8 @@ package keeper
 import (
 	"fmt"
 
+	"cosmossdk.io/collections"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -17,21 +19,25 @@ func (k BaseKeeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) {
 	for _, se := range genState.GetAllSendEnabled() {
 		k.SetSendEnabled(ctx, se.Denom, se.Enabled)
 	}
+	totalSupplyMap := sdk.NewMapCoins(sdk.Coins{})
 
-	totalSupply := sdk.Coins{}
 	genState.Balances = types.SanitizeGenesisBalances(genState.Balances)
 
 	for _, balance := range genState.Balances {
 		addr := balance.GetAddress()
 
-		if err := k.initBalances(ctx, addr, balance.Coins); err != nil {
-			panic(fmt.Errorf("error on setting balances %w", err))
+		for _, coin := range balance.Coins {
+			err := k.Balances.Set(ctx, collections.Join(addr, coin.Denom), coin.Amount)
+			if err != nil {
+				panic(err)
+			}
 		}
 
-		totalSupply = totalSupply.Add(balance.Coins...)
+		totalSupplyMap.Add(balance.Coins...)
 	}
+	totalSupply := totalSupplyMap.ToCoins()
 
-	if !genState.Supply.Empty() && !genState.Supply.IsEqual(totalSupply) {
+	if !genState.Supply.Empty() && !genState.Supply.Equal(totalSupply) {
 		panic(fmt.Errorf("genesis supply is incorrect, expected %v, got %v", genState.Supply, totalSupply))
 	}
 

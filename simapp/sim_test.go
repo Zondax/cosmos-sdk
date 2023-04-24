@@ -2,6 +2,7 @@ package simapp
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math/rand"
 	"os"
@@ -9,30 +10,23 @@ import (
 	"strings"
 	"testing"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/libs/log"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	dbm "github.com/tendermint/tm-db"
 
-	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/server"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/log"
+	"cosmossdk.io/store"
+	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/feegrant"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/store"
+	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/server"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	authzkeeper "github.com/cosmos/cosmos-sdk/x/authz/keeper"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
-	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	evidencetypes "github.com/cosmos/cosmos-sdk/x/evidence/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"github.com/cosmos/cosmos-sdk/x/simulation"
 	simcli "github.com/cosmos/cosmos-sdk/x/simulation/client/cli"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -42,15 +36,12 @@ import (
 // SimAppChainID hardcoded chainID for simulation
 const SimAppChainID = "simulation-app"
 
+var FlagEnableStreamingValue bool
+
 // Get flags every time the simulator is run
 func init() {
 	simcli.GetSimulatorFlags()
-}
-
-type StoreKeysPrefixes struct {
-	A        storetypes.StoreKey
-	B        storetypes.StoreKey
-	Prefixes [][]byte
+	flag.BoolVar(&FlagEnableStreamingValue, "EnableStreaming", false, "Enable streaming service")
 }
 
 // fauxMerkleModeOpt returns a BaseApp option to use a dbStoreAdapter instead of
@@ -84,7 +75,7 @@ func TestFullAppSimulation(t *testing.T) {
 	appOptions[flags.FlagHome] = DefaultNodeHome
 	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
 
-	app := NewSimApp(logger, db, nil, true, appOptions, fauxMerkleModeOpt)
+	app := NewSimApp(logger, db, nil, true, appOptions, fauxMerkleModeOpt, baseapp.SetChainID(SimAppChainID))
 	require.Equal(t, "SimApp", app.Name())
 
 	// run randomized simulation
@@ -92,10 +83,10 @@ func TestFullAppSimulation(t *testing.T) {
 		t,
 		os.Stdout,
 		app.BaseApp,
-		AppStateFn(app.AppCodec(), app.SimulationManager()),
+		simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
 		simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
 		simtestutil.SimulationOperations(app, app.AppCodec(), config),
-		ModuleAccountAddrs(),
+		BlockedAddresses(),
 		config,
 		app.AppCodec(),
 	)
@@ -129,7 +120,7 @@ func TestAppImportExport(t *testing.T) {
 	appOptions[flags.FlagHome] = DefaultNodeHome
 	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
 
-	app := NewSimApp(logger, db, nil, true, appOptions, fauxMerkleModeOpt)
+	app := NewSimApp(logger, db, nil, true, appOptions, fauxMerkleModeOpt, baseapp.SetChainID(SimAppChainID))
 	require.Equal(t, "SimApp", app.Name())
 
 	// Run randomized simulation
@@ -137,10 +128,10 @@ func TestAppImportExport(t *testing.T) {
 		t,
 		os.Stdout,
 		app.BaseApp,
-		AppStateFn(app.AppCodec(), app.SimulationManager()),
+		simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
 		simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
 		simtestutil.SimulationOperations(app, app.AppCodec(), config),
-		ModuleAccountAddrs(),
+		BlockedAddresses(),
 		config,
 		app.AppCodec(),
 	)
@@ -169,7 +160,7 @@ func TestAppImportExport(t *testing.T) {
 		require.NoError(t, os.RemoveAll(newDir))
 	}()
 
-	newApp := NewSimApp(log.NewNopLogger(), newDB, nil, true, appOptions, fauxMerkleModeOpt)
+	newApp := NewSimApp(log.NewNopLogger(), newDB, nil, true, appOptions, fauxMerkleModeOpt, baseapp.SetChainID(SimAppChainID))
 	require.Equal(t, "SimApp", newApp.Name())
 
 	var genesisState GenesisState
@@ -187,42 +178,46 @@ func TestAppImportExport(t *testing.T) {
 		}
 	}()
 
-	ctxA := app.NewContext(true, tmproto.Header{Height: app.LastBlockHeight()})
-	ctxB := newApp.NewContext(true, tmproto.Header{Height: app.LastBlockHeight()})
+	ctxA := app.NewContext(true, cmtproto.Header{Height: app.LastBlockHeight()})
+	ctxB := newApp.NewContext(true, cmtproto.Header{Height: app.LastBlockHeight()})
 	newApp.ModuleManager.InitGenesis(ctxB, app.AppCodec(), genesisState)
 	newApp.StoreConsensusParams(ctxB, exported.ConsensusParams)
 
 	fmt.Printf("comparing stores...\n")
 
-	storeKeysPrefixes := []StoreKeysPrefixes{
-		{app.GetKey(authtypes.StoreKey), newApp.GetKey(authtypes.StoreKey), [][]byte{}},
-		{
-			app.GetKey(stakingtypes.StoreKey), newApp.GetKey(stakingtypes.StoreKey),
-			[][]byte{
-				stakingtypes.UnbondingQueueKey, stakingtypes.RedelegationQueueKey, stakingtypes.ValidatorQueueKey,
-				stakingtypes.HistoricalInfoKey, stakingtypes.UnbondingIDKey, stakingtypes.UnbondingIndexKey, stakingtypes.UnbondingTypeKey, stakingtypes.ValidatorUpdatesKey,
-			},
-		}, // ordering may change but it doesn't matter
-		{app.GetKey(slashingtypes.StoreKey), newApp.GetKey(slashingtypes.StoreKey), [][]byte{}},
-		{app.GetKey(minttypes.StoreKey), newApp.GetKey(minttypes.StoreKey), [][]byte{}},
-		{app.GetKey(distrtypes.StoreKey), newApp.GetKey(distrtypes.StoreKey), [][]byte{}},
-		{app.GetKey(banktypes.StoreKey), newApp.GetKey(banktypes.StoreKey), [][]byte{banktypes.BalancesPrefix}},
-		{app.GetKey(paramtypes.StoreKey), newApp.GetKey(paramtypes.StoreKey), [][]byte{}},
-		{app.GetKey(govtypes.StoreKey), newApp.GetKey(govtypes.StoreKey), [][]byte{}},
-		{app.GetKey(evidencetypes.StoreKey), newApp.GetKey(evidencetypes.StoreKey), [][]byte{}},
-		{app.GetKey(capabilitytypes.StoreKey), newApp.GetKey(capabilitytypes.StoreKey), [][]byte{}},
-		{app.GetKey(authzkeeper.StoreKey), newApp.GetKey(authzkeeper.StoreKey), [][]byte{authzkeeper.GrantKey, authzkeeper.GrantQueuePrefix}},
+	// skip certain prefixes
+	skipPrefixes := map[string][][]byte{
+		stakingtypes.StoreKey: {
+			stakingtypes.UnbondingQueueKey, stakingtypes.RedelegationQueueKey, stakingtypes.ValidatorQueueKey,
+			stakingtypes.HistoricalInfoKey, stakingtypes.UnbondingIDKey, stakingtypes.UnbondingIndexKey,
+			stakingtypes.UnbondingTypeKey, stakingtypes.ValidatorUpdatesKey,
+		},
+		authzkeeper.StoreKey:   {authzkeeper.GrantQueuePrefix},
+		feegrant.StoreKey:      {feegrant.FeeAllowanceQueueKeyPrefix},
+		slashingtypes.StoreKey: {slashingtypes.ValidatorMissedBlockBitmapKeyPrefix},
 	}
 
-	for _, skp := range storeKeysPrefixes {
-		storeA := ctxA.KVStore(skp.A)
-		storeB := ctxB.KVStore(skp.B)
+	storeKeys := app.GetStoreKeys()
+	require.NotEmpty(t, storeKeys)
 
-		failedKVAs, failedKVBs := sdk.DiffKVStores(storeA, storeB, skp.Prefixes)
-		require.Equal(t, len(failedKVAs), len(failedKVBs), "unequal sets of key-values to compare")
+	for _, appKeyA := range storeKeys {
+		// only compare kvstores
+		if _, ok := appKeyA.(*storetypes.KVStoreKey); !ok {
+			continue
+		}
 
-		fmt.Printf("compared %d different key/value pairs between %s and %s\n", len(failedKVAs), skp.A, skp.B)
-		require.Equal(t, 0, len(failedKVAs), simtestutil.GetSimulationLog(skp.A.Name(), app.SimulationManager().StoreDecoders, failedKVAs, failedKVBs))
+		keyName := appKeyA.Name()
+		appKeyB := newApp.GetKey(keyName)
+
+		storeA := ctxA.KVStore(appKeyA)
+		storeB := ctxB.KVStore(appKeyB)
+
+		failedKVAs, failedKVBs := simtestutil.DiffKVStores(storeA, storeB, skipPrefixes[keyName])
+		require.Equal(t, len(failedKVAs), len(failedKVBs), "unequal sets of key-values to compare %s", keyName)
+
+		fmt.Printf("compared %d different key/value pairs between %s and %s\n", len(failedKVAs), appKeyA, appKeyB)
+
+		require.Equal(t, 0, len(failedKVAs), simtestutil.GetSimulationLog(keyName, app.SimulationManager().StoreDecoders, failedKVAs, failedKVBs))
 	}
 }
 
@@ -245,7 +240,7 @@ func TestAppSimulationAfterImport(t *testing.T) {
 	appOptions[flags.FlagHome] = DefaultNodeHome
 	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
 
-	app := NewSimApp(logger, db, nil, true, appOptions, fauxMerkleModeOpt)
+	app := NewSimApp(logger, db, nil, true, appOptions, fauxMerkleModeOpt, baseapp.SetChainID(SimAppChainID))
 	require.Equal(t, "SimApp", app.Name())
 
 	// Run randomized simulation
@@ -253,10 +248,10 @@ func TestAppSimulationAfterImport(t *testing.T) {
 		t,
 		os.Stdout,
 		app.BaseApp,
-		AppStateFn(app.AppCodec(), app.SimulationManager()),
+		simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
 		simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
 		simtestutil.SimulationOperations(app, app.AppCodec(), config),
-		ModuleAccountAddrs(),
+		BlockedAddresses(),
 		config,
 		app.AppCodec(),
 	)
@@ -290,21 +285,22 @@ func TestAppSimulationAfterImport(t *testing.T) {
 		require.NoError(t, os.RemoveAll(newDir))
 	}()
 
-	newApp := NewSimApp(log.NewNopLogger(), newDB, nil, true, appOptions, fauxMerkleModeOpt)
+	newApp := NewSimApp(log.NewNopLogger(), newDB, nil, true, appOptions, fauxMerkleModeOpt, baseapp.SetChainID(SimAppChainID))
 	require.Equal(t, "SimApp", newApp.Name())
 
 	newApp.InitChain(abci.RequestInitChain{
 		AppStateBytes: exported.AppState,
+		ChainId:       SimAppChainID,
 	})
 
 	_, _, err = simulation.SimulateFromSeed(
 		t,
 		os.Stdout,
 		newApp.BaseApp,
-		AppStateFn(app.AppCodec(), app.SimulationManager()),
+		simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
 		simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
 		simtestutil.SimulationOperations(newApp, newApp.AppCodec(), config),
-		ModuleAccountAddrs(),
+		BlockedAddresses(),
 		config,
 		app.AppCodec(),
 	)
@@ -326,12 +322,24 @@ func TestAppStateDeterminism(t *testing.T) {
 	config.ChainID = SimAppChainID
 
 	numSeeds := 3
-	numTimesToRunPerSeed := 5
+	numTimesToRunPerSeed := 3 // This used to be set to 5, but we've temporarily reduced it to 3 for the sake of faster CI.
 	appHashList := make([]json.RawMessage, numTimesToRunPerSeed)
 
-	appOptions := make(simtestutil.AppOptionsMap, 0)
-	appOptions[flags.FlagHome] = DefaultNodeHome
-	appOptions[server.FlagInvCheckPeriod] = simcli.FlagPeriodValue
+	appOptions := viper.New()
+	if FlagEnableStreamingValue {
+		m := make(map[string]interface{})
+		m["streaming.abci.keys"] = []string{"*"}
+		m["streaming.abci.plugin"] = "abci_v1"
+		m["streaming.abci.stop-node-on-err"] = true
+		for key, value := range m {
+			appOptions.SetDefault(key, value)
+		}
+	}
+	appOptions.SetDefault(flags.FlagHome, DefaultNodeHome)
+	appOptions.SetDefault(server.FlagInvCheckPeriod, simcli.FlagPeriodValue)
+	if simcli.FlagVerboseValue {
+		appOptions.SetDefault(flags.FlagLogLevel, "debug")
+	}
 
 	for i := 0; i < numSeeds; i++ {
 		config.Seed = rand.Int63()
@@ -339,13 +347,13 @@ func TestAppStateDeterminism(t *testing.T) {
 		for j := 0; j < numTimesToRunPerSeed; j++ {
 			var logger log.Logger
 			if simcli.FlagVerboseValue {
-				logger = log.TestingLogger()
+				logger = log.NewTestLogger(t)
 			} else {
 				logger = log.NewNopLogger()
 			}
 
 			db := dbm.NewMemDB()
-			app := NewSimApp(logger, db, nil, true, appOptions, interBlockCacheOpt())
+			app := NewSimApp(logger, db, nil, true, appOptions, interBlockCacheOpt(), baseapp.SetChainID(SimAppChainID))
 
 			fmt.Printf(
 				"running non-determinism simulation; seed %d: %d/%d, attempt: %d/%d\n",
@@ -356,10 +364,10 @@ func TestAppStateDeterminism(t *testing.T) {
 				t,
 				os.Stdout,
 				app.BaseApp,
-				AppStateFn(app.AppCodec(), app.SimulationManager()),
+				simtestutil.AppStateFn(app.AppCodec(), app.SimulationManager(), app.DefaultGenesis()),
 				simtypes.RandomAccounts, // Replace with own random account function if using keys other than secp256k1
 				simtestutil.SimulationOperations(app, app.AppCodec(), config),
-				ModuleAccountAddrs(),
+				BlockedAddresses(),
 				config,
 				app.AppCodec(),
 			)

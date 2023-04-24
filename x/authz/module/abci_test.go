@@ -4,6 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/log"
+	storetypes "cosmossdk.io/store/types"
+	"github.com/cometbft/cometbft/proto/tendermint/types"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
@@ -15,16 +21,11 @@ import (
 	authzmodule "github.com/cosmos/cosmos-sdk/x/authz/module"
 	authztestutil "github.com/cosmos/cosmos-sdk/x/authz/testutil"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
-	"github.com/tendermint/tendermint/libs/log"
-
-	"github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
 func TestExpiredGrantsQueue(t *testing.T) {
-	key := sdk.NewKVStoreKey(keeper.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(t, key, sdk.NewTransientStoreKey("transient_test"))
+	key := storetypes.NewKVStoreKey(keeper.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
 	encCfg := moduletestutil.MakeTestEncodingConfig(authzmodule.AppModuleBasic{})
 	ctx := testCtx.Ctx.WithBlockHeader(types.Header{})
 
@@ -57,6 +58,9 @@ func TestExpiredGrantsQueue(t *testing.T) {
 	accountKeeper.EXPECT().GetAccount(gomock.Any(), grantee2).Return(authtypes.NewBaseAccountWithAddress(grantee2)).AnyTimes()
 	accountKeeper.EXPECT().GetAccount(gomock.Any(), grantee3).Return(authtypes.NewBaseAccountWithAddress(grantee3)).AnyTimes()
 	accountKeeper.EXPECT().GetAccount(gomock.Any(), grantee4).Return(authtypes.NewBaseAccountWithAddress(grantee4)).AnyTimes()
+
+	accountKeeper.EXPECT().StringToBytes(granter.String()).Return(granter, nil).AnyTimes()
+	accountKeeper.EXPECT().BytesToString(granter).Return(granter.String(), nil).AnyTimes()
 
 	authzKeeper := keeper.NewKeeper(key, encCfg.Codec, baseApp.MsgServiceRouter(), accountKeeper)
 

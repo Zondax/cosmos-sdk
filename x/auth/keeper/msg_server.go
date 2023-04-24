@@ -3,8 +3,9 @@ package keeper
 import (
 	"context"
 
+	"cosmossdk.io/errors"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 )
@@ -22,13 +23,17 @@ func NewMsgServerImpl(ak AccountKeeper) types.MsgServer {
 	}
 }
 
-func (ms msgServer) UpdateParams(goCtx context.Context, req *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
-	if ms.authority != req.Authority {
-		return nil, errors.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", ms.authority, req.Authority)
+func (ms msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
+	if ms.authority != msg.Authority {
+		return nil, errors.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", ms.authority, msg.Authority)
+	}
+
+	if err := msg.Params.Validate(); err != nil {
+		return nil, err
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	if err := ms.SetParams(ctx, req.Params); err != nil {
+	if err := ms.SetParams(ctx, msg.Params); err != nil {
 		return nil, err
 	}
 

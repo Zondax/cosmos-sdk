@@ -10,6 +10,7 @@ import (
 
 	"github.com/cosmos/go-bip39"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -77,7 +78,16 @@ Example:
 	f.Uint32(flagCoinType, sdk.GetConfig().GetCoinType(), "coin type number for HD derivation")
 	f.Uint32(flagAccount, 0, "Account number for HD derivation (less than equal 2147483647)")
 	f.Uint32(flagIndex, 0, "Address index number for HD derivation (less than equal 2147483647)")
-	f.String(flags.FlagKeyAlgorithm, string(hd.Secp256k1Type), "Key signing algorithm to generate keys for")
+	f.String(flags.FlagKeyType, string(hd.Secp256k1Type), "Key signing algorithm to generate keys for")
+
+	// support old flags name for backwards compatibility
+	f.SetNormalizeFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+		if name == "algo" {
+			name = flags.FlagKeyType
+		}
+
+		return pflag.NormalizedName(name)
+	})
 
 	return cmd
 }
@@ -113,7 +123,7 @@ func runAddCmd(ctx client.Context, cmd *cobra.Command, args []string, inBuf *buf
 	outputFormat := ctx.OutputFormat
 
 	keyringAlgos, _ := kb.SupportedAlgorithms()
-	algoStr, _ := cmd.Flags().GetString(flags.FlagKeyAlgorithm)
+	algoStr, _ := cmd.Flags().GetString(flags.FlagKeyType)
 	algo, err := keyring.NewSigningAlgoFromString(algoStr, keyringAlgos)
 	if err != nil {
 		return err
@@ -219,8 +229,8 @@ func runAddCmd(ctx client.Context, cmd *cobra.Command, args []string, inBuf *buf
 	// Get bip39 mnemonic
 	var mnemonic, bip39Passphrase string
 
-	recover, _ := cmd.Flags().GetBool(flagRecover)
-	if recover {
+	recoverFlag, _ := cmd.Flags().GetBool(flagRecover)
+	if recoverFlag {
 		mnemonic, err = input.GetString("Enter your bip39 mnemonic", inBuf)
 		if err != nil {
 			return err
@@ -241,7 +251,7 @@ func runAddCmd(ctx client.Context, cmd *cobra.Command, args []string, inBuf *buf
 	}
 
 	if len(mnemonic) == 0 {
-		// read entropy seed straight from tmcrypto.Rand and convert to mnemonic
+		// read entropy seed straight from cmtcrypto.Rand and convert to mnemonic
 		entropySeed, err := bip39.NewEntropy(mnemonicEntropySize)
 		if err != nil {
 			return err
@@ -281,7 +291,7 @@ func runAddCmd(ctx client.Context, cmd *cobra.Command, args []string, inBuf *buf
 	}
 
 	// Recover key from seed passphrase
-	if recover {
+	if recoverFlag {
 		// Hide mnemonic from output
 		showMnemonic = false
 		mnemonic = ""
@@ -292,9 +302,9 @@ func runAddCmd(ctx client.Context, cmd *cobra.Command, args []string, inBuf *buf
 
 func printCreate(cmd *cobra.Command, k *keyring.Record, showMnemonic bool, mnemonic, outputFormat string) error {
 	switch outputFormat {
-	case OutputFormatText:
+	case flags.OutputFormatText:
 		cmd.PrintErrln()
-		if err := printKeyringRecord(cmd.OutOrStdout(), k, keyring.MkAccKeyOutput, outputFormat); err != nil {
+		if err := printKeyringRecord(cmd.OutOrStdout(), k, MkAccKeyOutput, outputFormat); err != nil {
 			return err
 		}
 
@@ -304,8 +314,8 @@ func printCreate(cmd *cobra.Command, k *keyring.Record, showMnemonic bool, mnemo
 				return fmt.Errorf("failed to print mnemonic: %v", err)
 			}
 		}
-	case OutputFormatJSON:
-		out, err := keyring.MkAccKeyOutput(k)
+	case flags.OutputFormatJSON:
+		out, err := MkAccKeyOutput(k)
 		if err != nil {
 			return err
 		}

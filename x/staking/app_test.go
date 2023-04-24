@@ -5,13 +5,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
 	"cosmossdk.io/math"
+
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -53,12 +57,17 @@ func TestStakingMsgs(t *testing.T) {
 	startupCfg := simtestutil.DefaultStartUpConfig()
 	startupCfg.GenesisAccounts = accs
 
-	app, err := simtestutil.SetupWithConfiguration(testutil.AppConfig, startupCfg, &bankKeeper, &stakingKeeper)
+	app, err := simtestutil.SetupWithConfiguration(
+		depinject.Configs(
+			testutil.AppConfig,
+			depinject.Supply(log.NewNopLogger()),
+		),
+		startupCfg, &bankKeeper, &stakingKeeper)
 	require.NoError(t, err)
-	ctxCheck := app.BaseApp.NewContext(true, tmproto.Header{})
+	ctxCheck := app.BaseApp.NewContext(true, cmtproto.Header{})
 
-	require.True(t, sdk.Coins{genCoin}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr1)))
-	require.True(t, sdk.Coins{genCoin}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr2)))
+	require.True(t, sdk.Coins{genCoin}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr1)))
+	require.True(t, sdk.Coins{genCoin}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr2)))
 
 	// create validator
 	description := types.NewDescription("foo_moniker", "", "", "", "")
@@ -67,61 +76,61 @@ func TestStakingMsgs(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	header := tmproto.Header{Height: app.LastBlockHeight() + 1}
-	txConfig := moduletestutil.MakeTestEncodingConfig().TxConfig
+	header := cmtproto.Header{Height: app.LastBlockHeight() + 1}
+	txConfig := moduletestutil.MakeTestTxConfig()
 	_, _, err = simtestutil.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{createValidatorMsg}, "", []uint64{0}, []uint64{0}, true, true, priv1)
 	require.NoError(t, err)
-	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr1)))
+	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr1)))
 
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	app.BeginBlock(abci.RequestBeginBlock{Header: header})
-	ctxCheck = app.BaseApp.NewContext(true, tmproto.Header{})
+	ctxCheck = app.BaseApp.NewContext(true, cmtproto.Header{})
 	validator, found := stakingKeeper.GetValidator(ctxCheck, sdk.ValAddress(addr1))
 	require.True(t, found)
 	require.Equal(t, sdk.ValAddress(addr1).String(), validator.OperatorAddress)
 	require.Equal(t, types.Bonded, validator.Status)
 	require.True(math.IntEq(t, bondTokens, validator.BondedTokens()))
 
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	app.BeginBlock(abci.RequestBeginBlock{Header: header})
 
 	// edit the validator
 	description = types.NewDescription("bar_moniker", "", "", "", "")
 	editValidatorMsg := types.NewMsgEditValidator(sdk.ValAddress(addr1), description, nil, nil)
 
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	_, _, err = simtestutil.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{editValidatorMsg}, "", []uint64{0}, []uint64{1}, true, true, priv1)
 	require.NoError(t, err)
 
-	ctxCheck = app.BaseApp.NewContext(true, tmproto.Header{})
+	ctxCheck = app.BaseApp.NewContext(true, cmtproto.Header{})
 	validator, found = stakingKeeper.GetValidator(ctxCheck, sdk.ValAddress(addr1))
 	require.True(t, found)
 	require.Equal(t, description, validator.Description)
 
 	// delegate
-	require.True(t, sdk.Coins{genCoin}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr2)))
+	require.True(t, sdk.Coins{genCoin}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr2)))
 	delegateMsg := types.NewMsgDelegate(addr2, sdk.ValAddress(addr1), bondCoin)
 
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	_, _, err = simtestutil.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{delegateMsg}, "", []uint64{1}, []uint64{0}, true, true, priv2)
 	require.NoError(t, err)
 
-	ctxCheck = app.BaseApp.NewContext(true, tmproto.Header{})
-	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr2)))
+	ctxCheck = app.BaseApp.NewContext(true, cmtproto.Header{})
+	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr2)))
 	_, found = stakingKeeper.GetDelegation(ctxCheck, addr2, sdk.ValAddress(addr1))
 	require.True(t, found)
 
 	// begin unbonding
 	beginUnbondingMsg := types.NewMsgUndelegate(addr2, sdk.ValAddress(addr1), bondCoin)
-	header = tmproto.Header{Height: app.LastBlockHeight() + 1}
+	header = cmtproto.Header{Height: app.LastBlockHeight() + 1}
 	_, _, err = simtestutil.SignCheckDeliver(t, txConfig, app.BaseApp, header, []sdk.Msg{beginUnbondingMsg}, "", []uint64{1}, []uint64{1}, true, true, priv2)
 	require.NoError(t, err)
 
 	// delegation should exist anymore
-	ctxCheck = app.BaseApp.NewContext(true, tmproto.Header{})
+	ctxCheck = app.BaseApp.NewContext(true, cmtproto.Header{})
 	_, found = stakingKeeper.GetDelegation(ctxCheck, addr2, sdk.ValAddress(addr1))
 	require.False(t, found)
 
 	// balance should be the same because bonding not yet complete
-	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.IsEqual(bankKeeper.GetAllBalances(ctxCheck, addr2)))
+	require.True(t, sdk.Coins{genCoin.Sub(bondCoin)}.Equal(bankKeeper.GetAllBalances(ctxCheck, addr2)))
 }

@@ -17,9 +17,9 @@ sidebar_position: 1
 * [Events](#events)
     * [BeginBlocker](#beginblocker)
 * [Client](#client)
-        * [CLI](#cli)
-        * [gRPC](#grpc)
-        * [REST](#rest)
+    * [CLI](#cli)
+    * [gRPC](#grpc)
+    * [REST](#rest)
 
 ## Concepts
 
@@ -56,7 +56,7 @@ The minter is a space for holding current inflation information.
 * Minter: `0x00 -> ProtocolBuffer(minter)`
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/v0.46.0/proto/cosmos/mint/v1beta1/mint.proto#L9-L23
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/mint/v1beta1/mint.proto#L10-L24
 ```
 
 ### Params
@@ -67,14 +67,12 @@ it can be updated with governance or the address with authority.
 * Params: `mint/params -> legacy_amino(params)`
 
 ```protobuf reference
-https://github.com/cosmos/cosmos-sdk/blob/v0.46.0/proto/cosmos/mint/v1beta1/mint.proto#L25-L57
+https://github.com/cosmos/cosmos-sdk/blob/v0.47.0-rc1/proto/cosmos/mint/v1beta1/mint.proto#L26-L59
 ```
-
 
 ## Begin-Block
 
-Minting parameters are recalculated and inflation
-paid at the beginning of each block.
+Minting parameters are recalculated and inflation paid at the beginning of each block.
 
 ### Inflation rate calculation
 
@@ -85,7 +83,7 @@ inflation calculation logic is needed, this can be achieved by defining and
 passing a function that matches `InflationCalculationFn`'s signature.
 
 ```go
-type InflationCalculationFn func(ctx sdk.Context, minter Minter, params Params, bondedRatio sdk.Dec) sdk.Dec
+type InflationCalculationFn func(ctx sdk.Context, minter Minter, params Params, bondedRatio math.LegacyDec) math.LegacyDec
 ```
 
 #### NextInflationRate
@@ -97,11 +95,11 @@ possible is defined to be 13% per year, however the annual inflation is capped
 as between 7% and 20%.
 
 ```go
-NextInflationRate(params Params, bondedRatio sdk.Dec) (inflation sdk.Dec) {
+NextInflationRate(params Params, bondedRatio math.LegacyDec) (inflation math.LegacyDec) {
 	inflationRateChangePerYear = (1 - bondedRatio/params.GoalBonded) * params.InflationRateChange
 	inflationRateChange = inflationRateChangePerYear/blocksPerYr
 
-	// increase the new annual inflation for this next cycle
+	// increase the new annual inflation for this next block
 	inflation += inflationRateChange
 	if inflation > params.InflationMax {
 		inflation = params.InflationMax
@@ -120,7 +118,7 @@ Calculate the annual provisions based on current total supply and inflation
 rate. This parameter is calculated once per block.
 
 ```go
-NextAnnualProvisions(params Params, totalSupply sdk.Dec) (provisions sdk.Dec) {
+NextAnnualProvisions(params Params, totalSupply math.LegacyDec) (provisions math.LegacyDec) {
 	return Inflation * totalSupply
 ```
 

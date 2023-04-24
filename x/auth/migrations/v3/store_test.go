@@ -5,10 +5,15 @@ import (
 	"testing"
 	"time"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -39,33 +44,36 @@ func TestMigrateMapAccAddressToAccNumberKey(t *testing.T) {
 	encCfg := moduletestutil.MakeTestEncodingConfig(auth.AppModuleBasic{})
 	cdc := encCfg.Codec
 
-	storeKey := sdk.NewKVStoreKey(v1.ModuleName)
-	tKey := sdk.NewTransientStoreKey("transient_test")
+	storeKey := storetypes.NewKVStoreKey(v1.ModuleName)
+	tKey := storetypes.NewTransientStoreKey("transient_test")
 	ctx := testutil.DefaultContext(storeKey, tKey)
-	store := ctx.KVStore(storeKey)
+	storeService := runtime.NewKVStoreService(storeKey)
 
 	var accountKeeper keeper.AccountKeeper
 
 	app, err := simtestutil.Setup(
-		authtestutil.AppConfig,
+		depinject.Configs(
+			authtestutil.AppConfig,
+			depinject.Supply(log.NewNopLogger()),
+		),
 		&accountKeeper,
 	)
 	require.NoError(t, err)
 
 	legacySubspace := newMockSubspace(authtypes.DefaultParams())
-	require.NoError(t, v4.Migrate(ctx, store, legacySubspace, cdc))
+	require.NoError(t, v4.Migrate(ctx, storeService, legacySubspace, cdc))
 
 	// new base account
 	senderPrivKey := secp256k1.GenPrivKey()
 	randAccNumber := uint64(rand.Intn(100000-10000) + 10000)
 	acc := authtypes.NewBaseAccount(senderPrivKey.PubKey().Address().Bytes(), senderPrivKey.PubKey(), randAccNumber, 0)
 
-	ctx = app.BaseApp.NewContext(false, tmproto.Header{Time: time.Now()})
+	ctx = app.BaseApp.NewContext(false, cmtproto.Header{Time: time.Now()})
 
 	// migrator
 	m := keeper.NewMigrator(accountKeeper, app.GRPCQueryRouter(), legacySubspace)
 	// set the account to store with map acc addr to acc number
-	require.NoError(t, m.V45_SetAccount(ctx, acc))
+	require.NoError(t, m.V45SetAccount(ctx, acc))
 
 	testCases := []struct {
 		name        string

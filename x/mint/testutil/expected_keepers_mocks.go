@@ -5,11 +5,11 @@
 package testutil
 
 import (
+	context "context"
 	reflect "reflect"
 
 	math "cosmossdk.io/math"
 	types "github.com/cosmos/cosmos-sdk/types"
-	types0 "github.com/cosmos/cosmos-sdk/x/auth/types"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -37,10 +37,10 @@ func (m *MockStakingKeeper) EXPECT() *MockStakingKeeperMockRecorder {
 }
 
 // BondedRatio mocks base method.
-func (m *MockStakingKeeper) BondedRatio(ctx types.Context) types.Dec {
+func (m *MockStakingKeeper) BondedRatio(ctx types.Context) math.LegacyDec {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BondedRatio", ctx)
-	ret0, _ := ret[0].(types.Dec)
+	ret0, _ := ret[0].(math.LegacyDec)
 	return ret0
 }
 
@@ -88,10 +88,10 @@ func (m *MockAccountKeeper) EXPECT() *MockAccountKeeperMockRecorder {
 }
 
 // GetModuleAccount mocks base method.
-func (m *MockAccountKeeper) GetModuleAccount(ctx types.Context, moduleName string) types0.ModuleAccountI {
+func (m *MockAccountKeeper) GetModuleAccount(ctx context.Context, moduleName string) types.ModuleAccountI {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetModuleAccount", ctx, moduleName)
-	ret0, _ := ret[0].(types0.ModuleAccountI)
+	ret0, _ := ret[0].(types.ModuleAccountI)
 	return ret0
 }
 
@@ -116,7 +116,7 @@ func (mr *MockAccountKeeperMockRecorder) GetModuleAddress(name interface{}) *gom
 }
 
 // SetModuleAccount mocks base method.
-func (m *MockAccountKeeper) SetModuleAccount(arg0 types.Context, arg1 types0.ModuleAccountI) {
+func (m *MockAccountKeeper) SetModuleAccount(arg0 context.Context, arg1 types.ModuleAccountI) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetModuleAccount", arg0, arg1)
 }

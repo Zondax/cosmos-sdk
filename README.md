@@ -32,11 +32,11 @@
     <img alt="Lint Satus" src="https://github.com/cosmos/cosmos-sdk/workflows/Lint/badge.svg" />
 </div>
 
-The Cosmos SDK is a framework for building blockchain applications. [Tendermint Core (BFT Consensus)](https://github.com/tendermint/tendermint) and the Cosmos SDK are written in the Go programming language. Cosmos SDK is used to build [Gaia](https://github.com/cosmos/gaia), the implementation of the Cosmos Hub.
+The Cosmos SDK is a framework for building blockchain applications. [CometBFT (BFT Consensus)](https://github.com/cometbft/cometbft) and the Cosmos SDK are written in the Go programming language. Cosmos SDK is used to build [Gaia](https://github.com/cosmos/gaia), the implementation of the Cosmos Hub.
 
 **WARNING**: The Cosmos SDK has mostly stabilized, but we are still making some breaking changes.
 
-**Note**: Requires [Go 1.19+](https://go.dev/dl)
+**Note**: Requires [Go 1.20+](https://go.dev/dl)
 
 ## Quick Start
 
@@ -63,10 +63,6 @@ The Cosmos Hub application, `gaia`, has its own [cosmos/gaia repository](https:/
 ### Inter-Blockchain Communication (IBC)
 
 The IBC module for the Cosmos SDK has its own [cosmos/ibc-go repository](https://github.com/cosmos/ibc-go). Go there to build and integrate with the IBC module.
-
-### Ignite CLI
-
-Ignite CLI is the all-in-one platform to build, launch, and maintain any crypto application on a sovereign and secured blockchain. If you are building a new app or a new module, use [Ignite CLI](https://github.com/ignite/cli) to get started and speed up development.
 
 ## Disambiguation
 

@@ -3,9 +3,9 @@ package keeper_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"cosmossdk.io/simapp"
+	"gotest.tools/v3/assert"
+
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -15,7 +15,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/gov/types"
 	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	"github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
-	"github.com/cosmos/cosmos-sdk/x/staking"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -39,7 +38,7 @@ func getTestProposal() []sdk.Msg {
 }
 
 func createValidators(t *testing.T, ctx sdk.Context, app *simapp.SimApp, powers []int64) ([]sdk.AccAddress, []sdk.ValAddress) {
-	addrs := simapp.AddTestAddrsIncremental(app, ctx, 5, sdk.NewInt(30000000))
+	addrs := simtestutil.AddTestAddrsIncremental(app.BankKeeper, app.StakingKeeper, ctx, 5, sdk.NewInt(30000000))
 	valAddrs := simtestutil.ConvertAddrsToValAddrs(addrs)
 	pks := simtestutil.CreateTestPubKeys(5)
 	cdc := moduletestutil.MakeTestEncodingConfig().Codec
@@ -53,11 +52,11 @@ func createValidators(t *testing.T, ctx sdk.Context, app *simapp.SimApp, powers 
 	)
 
 	val1, err := stakingtypes.NewValidator(valAddrs[0], pks[0], stakingtypes.Description{})
-	require.NoError(t, err)
+	assert.NilError(t, err)
 	val2, err := stakingtypes.NewValidator(valAddrs[1], pks[1], stakingtypes.Description{})
-	require.NoError(t, err)
+	assert.NilError(t, err)
 	val3, err := stakingtypes.NewValidator(valAddrs[2], pks[2], stakingtypes.Description{})
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	app.StakingKeeper.SetValidator(ctx, val1)
 	app.StakingKeeper.SetValidator(ctx, val2)
@@ -73,7 +72,7 @@ func createValidators(t *testing.T, ctx sdk.Context, app *simapp.SimApp, powers 
 	_, _ = app.StakingKeeper.Delegate(ctx, addrs[1], app.StakingKeeper.TokensFromConsensusPower(ctx, powers[1]), stakingtypes.Unbonded, val2, true)
 	_, _ = app.StakingKeeper.Delegate(ctx, addrs[2], app.StakingKeeper.TokensFromConsensusPower(ctx, powers[2]), stakingtypes.Unbonded, val3, true)
 
-	_ = staking.EndBlocker(ctx, app.StakingKeeper)
+	app.StakingKeeper.EndBlocker(ctx)
 
 	return addrs, valAddrs
 }

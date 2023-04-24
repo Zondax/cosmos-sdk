@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
 
 	modulev1 "cosmossdk.io/api/cosmos/genutil/module/v1"
 	"cosmossdk.io/core/appmodule"
@@ -132,7 +132,8 @@ func init() {
 	)
 }
 
-type GenutilInputs struct {
+// ModuleInputs defines the inputs needed for the genutil module.
+type ModuleInputs struct {
 	depinject.In
 
 	AccountKeeper types.AccountKeeper
@@ -141,7 +142,7 @@ type GenutilInputs struct {
 	Config        client.TxConfig
 }
 
-func ProvideModule(in GenutilInputs) appmodule.AppModule {
+func ProvideModule(in ModuleInputs) appmodule.AppModule {
 	m := NewAppModule(in.AccountKeeper, in.StakingKeeper, in.DeliverTx, in.Config)
 	return m
 }

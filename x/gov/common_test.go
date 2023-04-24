@@ -6,7 +6,11 @@ import (
 	"sort"
 	"testing"
 
+	"cosmossdk.io/depinject"
+	sdklog "cosmossdk.io/log"
 	"cosmossdk.io/math"
+	"github.com/stretchr/testify/require"
+
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -19,6 +23,8 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	_ "github.com/cosmos/cosmos-sdk/x/consensus"
+	_ "github.com/cosmos/cosmos-sdk/x/distribution"
+	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
 	"github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	"github.com/cosmos/cosmos-sdk/x/gov/types"
 	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
@@ -27,7 +33,6 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/staking"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -98,27 +103,32 @@ var pubkeys = []cryptotypes.PubKey{
 }
 
 type suite struct {
-	AccountKeeper authkeeper.AccountKeeper
-	BankKeeper    bankkeeper.Keeper
-	GovKeeper     *keeper.Keeper
-	StakingKeeper *stakingkeeper.Keeper
-	App           *runtime.App
+	AccountKeeper      authkeeper.AccountKeeper
+	BankKeeper         bankkeeper.Keeper
+	GovKeeper          *keeper.Keeper
+	StakingKeeper      *stakingkeeper.Keeper
+	DistributionKeeper distrkeeper.Keeper
+	App                *runtime.App
 }
 
 func createTestSuite(t *testing.T) suite {
 	res := suite{}
 
 	app, err := simtestutil.SetupWithConfiguration(
-		configurator.NewAppConfig(
-			configurator.ParamsModule(),
-			configurator.AuthModule(),
-			configurator.StakingModule(),
-			configurator.BankModule(),
-			configurator.GovModule(),
-			configurator.ConsensusModule(),
+		depinject.Configs(
+			configurator.NewAppConfig(
+				configurator.ParamsModule(),
+				configurator.AuthModule(),
+				configurator.StakingModule(),
+				configurator.BankModule(),
+				configurator.GovModule(),
+				configurator.ConsensusModule(),
+				configurator.DistributionModule(),
+			),
+			depinject.Supply(sdklog.NewNopLogger()),
 		),
 		simtestutil.DefaultStartUpConfig(),
-		&res.AccountKeeper, &res.BankKeeper, &res.GovKeeper, &res.StakingKeeper,
+		&res.AccountKeeper, &res.BankKeeper, &res.GovKeeper, &res.DistributionKeeper, &res.StakingKeeper,
 	)
 	require.NoError(t, err)
 

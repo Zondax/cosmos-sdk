@@ -1,13 +1,14 @@
 package sims
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
 
+	types2 "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
-	types2 "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/proto/tendermint/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -25,7 +26,10 @@ func GenSignedMockTx(r *rand.Rand, txConfig client.TxConfig, msgs []sdk.Msg, fee
 	// create a random length memo
 	memo := simulation.RandStringOfLength(r, simulation.RandIntBetween(r, 0, 100))
 
-	signMode := txConfig.SignModeHandler().DefaultMode()
+	signMode, err := authsign.APISignModeToInternal(txConfig.SignModeHandler().DefaultMode())
+	if err != nil {
+		return nil, err
+	}
 
 	// 1st round: set SignatureV2 with empty signatures, to set correct
 	// signer infos.
@@ -40,7 +44,7 @@ func GenSignedMockTx(r *rand.Rand, txConfig client.TxConfig, msgs []sdk.Msg, fee
 	}
 
 	tx := txConfig.NewTxBuilder()
-	err := tx.SetMsgs(msgs...)
+	err = tx.SetMsgs(msgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +65,10 @@ func GenSignedMockTx(r *rand.Rand, txConfig client.TxConfig, msgs []sdk.Msg, fee
 			Sequence:      accSeqs[i],
 			PubKey:        p.PubKey(),
 		}
-		signBytes, err := txConfig.SignModeHandler().GetSignBytes(signMode, signerData, tx.GetTx())
+
+		signBytes, err := authsign.GetSignBytesAdapter(
+			context.Background(), txConfig.TxEncoder(), txConfig.SignModeHandler(), signMode, signerData,
+			tx.GetTx())
 		if err != nil {
 			panic(err)
 		}

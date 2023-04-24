@@ -3,23 +3,27 @@ package module_test
 import (
 	"testing"
 
+	sdkmath "cosmossdk.io/math"
+	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/feegrant"
+	"cosmossdk.io/x/feegrant/keeper"
+	"cosmossdk.io/x/feegrant/module"
+	feegranttestutil "cosmossdk.io/x/feegrant/testutil"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/cosmos/cosmos-sdk/x/feegrant"
-	"github.com/cosmos/cosmos-sdk/x/feegrant/keeper"
-	"github.com/cosmos/cosmos-sdk/x/feegrant/module"
-	feegranttestutil "github.com/cosmos/cosmos-sdk/x/feegrant/testutil"
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFeegrantPruning(t *testing.T) {
-	key := sdk.NewKVStoreKey(feegrant.StoreKey)
-	testCtx := testutil.DefaultContextWithDB(t, key, sdk.NewTransientStoreKey("transient_test"))
+	key := storetypes.NewKVStoreKey(feegrant.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
 	encCfg := moduletestutil.MakeTestEncodingConfig(module.AppModuleBasic{})
 
 	addrs := simtestutil.CreateIncrementalAccounts(4)
@@ -27,7 +31,7 @@ func TestFeegrantPruning(t *testing.T) {
 	granter2 := addrs[1]
 	granter3 := addrs[2]
 	grantee := addrs[3]
-	spendLimit := sdk.NewCoins(sdk.NewCoin("stake", sdk.NewInt(1000)))
+	spendLimit := sdk.NewCoins(sdk.NewCoin("stake", sdkmath.NewInt(1000)))
 	now := testCtx.Ctx.BlockTime()
 	oneDay := now.AddDate(0, 0, 1)
 
@@ -38,7 +42,17 @@ func TestFeegrantPruning(t *testing.T) {
 	accountKeeper.EXPECT().GetAccount(gomock.Any(), granter2).Return(authtypes.NewBaseAccountWithAddress(granter2)).AnyTimes()
 	accountKeeper.EXPECT().GetAccount(gomock.Any(), granter3).Return(authtypes.NewBaseAccountWithAddress(granter3)).AnyTimes()
 
-	feegrantKeeper := keeper.NewKeeper(encCfg.Codec, key, accountKeeper)
+	accountKeeper.EXPECT().StringToBytes(grantee.String()).Return(grantee.Bytes(), nil).AnyTimes()
+	accountKeeper.EXPECT().StringToBytes(granter1.String()).Return(granter1.Bytes(), nil).AnyTimes()
+	accountKeeper.EXPECT().StringToBytes(granter2.String()).Return(granter2.Bytes(), nil).AnyTimes()
+	accountKeeper.EXPECT().StringToBytes(granter3.String()).Return(granter3.Bytes(), nil).AnyTimes()
+
+	accountKeeper.EXPECT().BytesToString(grantee.Bytes()).Return(grantee.String(), nil).AnyTimes()
+	accountKeeper.EXPECT().BytesToString(granter1.Bytes()).Return(granter1.String(), nil).AnyTimes()
+	accountKeeper.EXPECT().BytesToString(granter2.Bytes()).Return(granter2.String(), nil).AnyTimes()
+	accountKeeper.EXPECT().BytesToString(granter3.Bytes()).Return(granter3.String(), nil).AnyTimes()
+
+	feegrantKeeper := keeper.NewKeeper(encCfg.Codec, runtime.NewKVStoreService(key), accountKeeper)
 
 	feegrantKeeper.GrantAllowance(
 		testCtx.Ctx,

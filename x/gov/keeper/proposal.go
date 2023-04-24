@@ -3,17 +3,32 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"time"
+
+	errorsmod "cosmossdk.io/errors"
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/gov/types"
 	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 )
 
 // SubmitProposal creates a new proposal given an array of messages
-func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadata string) (v1.Proposal, error) {
+func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadata, title, summary string, proposer sdk.AccAddress, expedited bool) (v1.Proposal, error) {
 	err := keeper.assertMetadataLength(metadata)
+	if err != nil {
+		return v1.Proposal{}, err
+	}
+
+	// assert summary is no longer than predefined max length of metadata
+	err = keeper.assertMetadataLength(summary)
+	if err != nil {
+		return v1.Proposal{}, err
+	}
+
+	// assert title is no longer than predefined max length of metadata
+	err = keeper.assertMetadataLength(title)
 	if err != nil {
 		return v1.Proposal{}, err
 	}
@@ -27,8 +42,10 @@ func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadat
 		msgsStr += fmt.Sprintf(",%s", sdk.MsgTypeURL(msg))
 
 		// perform a basic validation of the message
-		if err := msg.ValidateBasic(); err != nil {
-			return v1.Proposal{}, sdkerrors.Wrap(types.ErrInvalidProposalMsg, err.Error())
+		if m, ok := msg.(sdk.HasValidateBasic); ok {
+			if err := m.ValidateBasic(); err != nil {
+				return v1.Proposal{}, errorsmod.Wrap(types.ErrInvalidProposalMsg, err.Error())
+			}
 		}
 
 		signers := msg.GetSigners()
@@ -38,13 +55,13 @@ func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadat
 
 		// assert that the governance module account is the only signer of the messages
 		if !signers[0].Equals(keeper.GetGovernanceAccount(ctx).GetAddress()) {
-			return v1.Proposal{}, sdkerrors.Wrapf(types.ErrInvalidSigner, signers[0].String())
+			return v1.Proposal{}, errorsmod.Wrapf(types.ErrInvalidSigner, signers[0].String())
 		}
 
 		// use the msg service router to see that there is a valid route for that message.
 		handler := keeper.router.Handler(msg)
 		if handler == nil {
-			return v1.Proposal{}, sdkerrors.Wrap(types.ErrUnroutableProposalMsg, sdk.MsgTypeURL(msg))
+			return v1.Proposal{}, errorsmod.Wrap(types.ErrUnroutableProposalMsg, sdk.MsgTypeURL(msg))
 		}
 
 		// Only if it's a MsgExecLegacyContent do we try to execute the
@@ -58,7 +75,7 @@ func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadat
 				if errors.Is(types.ErrNoProposalHandlerExists, err) {
 					return v1.Proposal{}, err
 				}
-				return v1.Proposal{}, sdkerrors.Wrap(types.ErrInvalidProposalContent, err.Error())
+				return v1.Proposal{}, errorsmod.Wrap(types.ErrInvalidProposalContent, err.Error())
 			}
 		}
 
@@ -72,7 +89,7 @@ func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadat
 	submitTime := ctx.BlockHeader().Time
 	depositPeriod := keeper.GetParams(ctx).MaxDepositPeriod
 
-	proposal, err := v1.NewProposal(messages, proposalID, metadata, submitTime, submitTime.Add(*depositPeriod))
+	proposal, err := v1.NewProposal(messages, proposalID, submitTime, submitTime.Add(*depositPeriod), metadata, title, summary, proposer, expedited)
 	if err != nil {
 		return v1.Proposal{}, err
 	}
@@ -93,6 +110,57 @@ func (keeper Keeper) SubmitProposal(ctx sdk.Context, messages []sdk.Msg, metadat
 	)
 
 	return proposal, nil
+}
+
+// CancelProposal will cancel proposal before the voting period ends
+func (keeper Keeper) CancelProposal(ctx sdk.Context, proposalID uint64, proposer string) error {
+	proposal, ok := keeper.GetProposal(ctx, proposalID)
+	if !ok {
+		return errorsmod.Wrapf(types.ErrProposalNotFound, "proposal_id %d", proposalID)
+	}
+
+	// Checking proposal have proposer or not because old proposal doesn't have proposer field,
+	// https://github.com/cosmos/cosmos-sdk/blob/v0.46.2/proto/cosmos/gov/v1/gov.proto#L43
+	if proposal.Proposer == "" {
+		return types.ErrInvalidProposal.Wrapf("proposal %d doesn't have proposer %s, so cannot be canceled", proposalID, proposer)
+	}
+
+	// Check creator of the proposal
+	if proposal.Proposer != proposer {
+		return types.ErrInvalidProposer.Wrapf("invalid proposer %s", proposer)
+	}
+
+	// Check if proposal is active or not
+	if (proposal.Status != v1.StatusDepositPeriod) && (proposal.Status != v1.StatusVotingPeriod) {
+		return types.ErrInvalidProposal.Wrap("proposal should be in the deposit or voting period")
+	}
+
+	// Check proposal voting period is ended.
+	if proposal.VotingEndTime != nil && proposal.VotingEndTime.Before(ctx.BlockTime()) {
+		return types.ErrVotingPeriodEnded.Wrapf("voting period is already ended for this proposal %d", proposalID)
+	}
+
+	// burn the (deposits * proposal_cancel_rate) amount or sent to cancellation destination address.
+	// and deposits * (1 - proposal_cancel_rate) will be sent to depositors.
+	params := keeper.GetParams(ctx)
+	err := keeper.ChargeDeposit(ctx, proposal.Id, params.ProposalCancelDest, params.ProposalCancelRatio)
+	if err != nil {
+		return err
+	}
+
+	if proposal.VotingStartTime != nil {
+		keeper.deleteVotes(ctx, proposal.Id)
+	}
+
+	keeper.DeleteProposal(ctx, proposal.Id)
+
+	keeper.Logger(ctx).Info(
+		"proposal is canceled by proposer",
+		"proposal", proposal.Id,
+		"proposer", proposal.Proposer,
+	)
+
+	return nil
 }
 
 // GetProposal gets a proposal from store by ProposalID.
@@ -146,17 +214,18 @@ func (keeper Keeper) DeleteProposal(ctx sdk.Context, proposalID uint64) {
 	}
 	if proposal.VotingEndTime != nil {
 		keeper.RemoveFromActiveProposalQueue(ctx, proposalID, *proposal.VotingEndTime)
+		store.Delete(types.VotingPeriodProposalKey(proposalID))
 	}
 
 	store.Delete(types.ProposalKey(proposalID))
 }
 
-// IterateProposals iterates over the all the proposals and performs a callback function.
+// IterateProposals iterates over all the proposals and performs a callback function.
 // Panics when the iterator encounters a proposal which can't be unmarshaled.
 func (keeper Keeper) IterateProposals(ctx sdk.Context, cb func(proposal v1.Proposal) (stop bool)) {
 	store := ctx.KVStore(keeper.storeKey)
 
-	iterator := sdk.KVStorePrefixIterator(store, types.ProposalsKeyPrefix)
+	iterator := storetypes.KVStorePrefixIterator(store, types.ProposalsKeyPrefix)
 	defer iterator.Close()
 
 	for ; iterator.Valid(); iterator.Next() {
@@ -232,7 +301,7 @@ func (keeper Keeper) GetProposalID(ctx sdk.Context) (proposalID uint64, err erro
 	store := ctx.KVStore(keeper.storeKey)
 	bz := store.Get(types.ProposalIDKey)
 	if bz == nil {
-		return 0, sdkerrors.Wrap(types.ErrInvalidGenesis, "initial proposal ID hasn't been set")
+		return 0, errorsmod.Wrap(types.ErrInvalidGenesis, "initial proposal ID hasn't been set")
 	}
 
 	proposalID = types.GetProposalIDFromBytes(bz)
@@ -245,10 +314,16 @@ func (keeper Keeper) SetProposalID(ctx sdk.Context, proposalID uint64) {
 	store.Set(types.ProposalIDKey, types.GetProposalIDBytes(proposalID))
 }
 
+// ActivateVotingPeriod activates the voting period of a proposal
 func (keeper Keeper) ActivateVotingPeriod(ctx sdk.Context, proposal v1.Proposal) {
 	startTime := ctx.BlockHeader().Time
 	proposal.VotingStartTime = &startTime
-	votingPeriod := keeper.GetParams(ctx).VotingPeriod
+	var votingPeriod *time.Duration
+	if proposal.Expedited {
+		votingPeriod = keeper.GetParams(ctx).ExpeditedVotingPeriod
+	} else {
+		votingPeriod = keeper.GetParams(ctx).VotingPeriod
+	}
 	endTime := proposal.VotingStartTime.Add(*votingPeriod)
 	proposal.VotingEndTime = &endTime
 	proposal.Status = v1.StatusVotingPeriod
@@ -258,6 +333,7 @@ func (keeper Keeper) ActivateVotingPeriod(ctx sdk.Context, proposal v1.Proposal)
 	keeper.InsertActiveProposalQueue(ctx, proposal.Id, *proposal.VotingEndTime)
 }
 
+// MarshalProposal marshals the proposal and returns binary encoded bytes.
 func (keeper Keeper) MarshalProposal(proposal v1.Proposal) ([]byte, error) {
 	bz, err := keeper.cdc.Marshal(&proposal)
 	if err != nil {
@@ -266,6 +342,7 @@ func (keeper Keeper) MarshalProposal(proposal v1.Proposal) ([]byte, error) {
 	return bz, nil
 }
 
+// UnmarshalProposal unmarshals the proposal.
 func (keeper Keeper) UnmarshalProposal(bz []byte, proposal *v1.Proposal) error {
 	err := keeper.cdc.Unmarshal(bz, proposal)
 	if err != nil {

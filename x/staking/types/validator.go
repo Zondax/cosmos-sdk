@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"cosmossdk.io/errors"
 	"cosmossdk.io/math"
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmprotocrypto "github.com/tendermint/tendermint/proto/tendermint/crypto"
-	"sigs.k8s.io/yaml"
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -39,8 +39,6 @@ var (
 var _ ValidatorI = Validator{}
 
 // NewValidator constructs a new Validator
-//
-//nolint:interfacer
 func NewValidator(operator sdk.ValAddress, pubKey cryptotypes.PubKey, description Description) (Validator, error) {
 	pkAny, err := codectypes.NewAnyWithValue(pubKey)
 	if err != nil {
@@ -61,21 +59,6 @@ func NewValidator(operator sdk.ValAddress, pubKey cryptotypes.PubKey, descriptio
 		MinSelfDelegation:       math.OneInt(),
 		UnbondingOnHoldRefCount: 0,
 	}, nil
-}
-
-// String implements the Stringer interface for a Validator object.
-func (v Validator) String() string {
-	bz, err := codec.ProtoMarshalJSON(&v, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	out, err := yaml.JSONToYAML(bz)
-	if err != nil {
-		panic(err)
-	}
-
-	return string(out)
 }
 
 // Validators is a collection of Validator
@@ -202,12 +185,6 @@ func NewDescription(moniker, identity, website, securityContact, details string)
 	}
 }
 
-// String implements the Stringer interface for a Description object.
-func (d Description) String() string {
-	out, _ := yaml.Marshal(d)
-	return string(out)
-}
-
 // UpdateDescription updates the fields of a given description. An error is
 // returned if the resulting description contains an invalid length.
 func (d Description) UpdateDescription(d2 Description) (Description, error) {
@@ -243,23 +220,23 @@ func (d Description) UpdateDescription(d2 Description) (Description, error) {
 // EnsureLength ensures the length of a validator's description.
 func (d Description) EnsureLength() (Description, error) {
 	if len(d.Moniker) > MaxMonikerLength {
-		return d, sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid moniker length; got: %d, max: %d", len(d.Moniker), MaxMonikerLength)
+		return d, errors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid moniker length; got: %d, max: %d", len(d.Moniker), MaxMonikerLength)
 	}
 
 	if len(d.Identity) > MaxIdentityLength {
-		return d, sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid identity length; got: %d, max: %d", len(d.Identity), MaxIdentityLength)
+		return d, errors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid identity length; got: %d, max: %d", len(d.Identity), MaxIdentityLength)
 	}
 
 	if len(d.Website) > MaxWebsiteLength {
-		return d, sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid website length; got: %d, max: %d", len(d.Website), MaxWebsiteLength)
+		return d, errors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid website length; got: %d, max: %d", len(d.Website), MaxWebsiteLength)
 	}
 
 	if len(d.SecurityContact) > MaxSecurityContactLength {
-		return d, sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid security contact length; got: %d, max: %d", len(d.SecurityContact), MaxSecurityContactLength)
+		return d, errors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid security contact length; got: %d, max: %d", len(d.SecurityContact), MaxSecurityContactLength)
 	}
 
 	if len(d.Details) > MaxDetailsLength {
-		return d, sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid details length; got: %d, max: %d", len(d.Details), MaxDetailsLength)
+		return d, errors.Wrapf(sdkerrors.ErrInvalidRequest, "invalid details length; got: %d, max: %d", len(d.Details), MaxDetailsLength)
 	}
 
 	return d, nil
@@ -483,22 +460,27 @@ func (v Validator) GetOperator() sdk.ValAddress {
 func (v Validator) ConsPubKey() (cryptotypes.PubKey, error) {
 	pk, ok := v.ConsensusPubkey.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
-		return nil, sdkerrors.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
+		return nil, errors.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
 	}
 
 	return pk, nil
 }
 
-// TmConsPublicKey casts Validator.ConsensusPubkey to tmprotocrypto.PubKey.
-func (v Validator) TmConsPublicKey() (tmprotocrypto.PublicKey, error) {
+// Deprecated: use CmtConsPublicKey instead
+func (v Validator) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
+	return v.CmtConsPublicKey()
+}
+
+// CmtConsPublicKey casts Validator.ConsensusPubkey to cmtprotocrypto.PubKey.
+func (v Validator) CmtConsPublicKey() (cmtprotocrypto.PublicKey, error) {
 	pk, err := v.ConsPubKey()
 	if err != nil {
-		return tmprotocrypto.PublicKey{}, err
+		return cmtprotocrypto.PublicKey{}, err
 	}
 
-	tmPk, err := cryptocodec.ToTmProtoPublicKey(pk)
+	tmPk, err := cryptocodec.ToCmtProtoPublicKey(pk)
 	if err != nil {
-		return tmprotocrypto.PublicKey{}, err
+		return cmtprotocrypto.PublicKey{}, err
 	}
 
 	return tmPk, nil
@@ -508,7 +490,7 @@ func (v Validator) TmConsPublicKey() (tmprotocrypto.PublicKey, error) {
 func (v Validator) GetConsAddr() (sdk.ConsAddress, error) {
 	pk, ok := v.ConsensusPubkey.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
-		return nil, sdkerrors.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
+		return nil, errors.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
 	}
 
 	return sdk.ConsAddress(pk.Address()), nil

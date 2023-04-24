@@ -19,6 +19,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	legacy.RegisterAminoMsg(cdc, &MsgUpdateParams{}, "cosmos-sdk/x/crisis/MsgUpdateParams")
 }
 
+// RegisterInterfaces registers the interfaces types with the Interface Registry.
 func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&MsgVerifyInvariant{},
@@ -29,14 +30,14 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 }
 
 var (
-	amino     = codec.NewLegacyAmino()
-	ModuleCdc = codec.NewAminoCodec(amino)
+	aminoCdc  = codec.NewLegacyAmino()
+	ModuleCdc = codec.NewAminoCodec(aminoCdc)
 )
 
 func init() {
-	RegisterLegacyAminoCodec(amino)
-	cryptocodec.RegisterCrypto(amino)
-	sdk.RegisterLegacyAminoCodec(amino)
+	RegisterLegacyAminoCodec(aminoCdc)
+	cryptocodec.RegisterCrypto(aminoCdc)
+	sdk.RegisterLegacyAminoCodec(aminoCdc)
 
 	// Register all Amino interfaces and concrete types on the authz  and gov Amino codec so that this can later be
 	// used to properly serialize MsgGrant, MsgExec and MsgSubmitProposal instances

@@ -6,7 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/store/prefix"
+	"cosmossdk.io/store/prefix"
+
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/types/query"
 
 	"google.golang.org/grpc/codes"
@@ -28,10 +30,10 @@ func (ak AccountKeeper) AccountAddressByID(c context.Context, req *types.QueryAc
 		return nil, status.Error(codes.InvalidArgument, "requesting with id isn't supported, try to request using account-id")
 	}
 
-	accId := req.AccountId
+	accID := req.AccountId
 
 	ctx := sdk.UnwrapSDKContext(c)
-	address := ak.GetAccountAddressByID(ctx, accId)
+	address := ak.GetAccountAddressByID(ctx, accID)
 	if len(address) == 0 {
 		return nil, status.Errorf(codes.NotFound, "account address not found with account number %d", req.Id)
 	}
@@ -39,14 +41,13 @@ func (ak AccountKeeper) AccountAddressByID(c context.Context, req *types.QueryAc
 	return &types.QueryAccountAddressByIDResponse{AccountAddress: address}, nil
 }
 
-func (ak AccountKeeper) Accounts(c context.Context, req *types.QueryAccountsRequest) (*types.QueryAccountsResponse, error) {
+func (ak AccountKeeper) Accounts(ctx context.Context, req *types.QueryAccountsRequest) (*types.QueryAccountsResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "empty request")
 	}
 
-	ctx := sdk.UnwrapSDKContext(c)
-	store := ctx.KVStore(ak.storeKey)
-	accountsStore := prefix.NewStore(store, types.AddressStoreKeyPrefix)
+	store := ak.storeService.OpenKVStore(ctx)
+	accountsStore := prefix.NewStore(runtime.KVStoreAdapter(store), types.AddressStoreKeyPrefix)
 
 	var accounts []*codectypes.Any
 	pageRes, err := query.Paginate(accountsStore, req.Pagination, func(key, value []byte) error {
@@ -77,7 +78,7 @@ func (ak AccountKeeper) Account(c context.Context, req *types.QueryAccountReques
 	}
 
 	ctx := sdk.UnwrapSDKContext(c)
-	addr, err := sdk.AccAddressFromBech32(req.Address)
+	addr, err := ak.addressCdc.StringToBytes(req.Address)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +222,7 @@ func (ak AccountKeeper) AccountInfo(goCtx context.Context, req *types.QueryAccou
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	addr, err := sdk.AccAddressFromBech32(req.Address)
+	addr, err := ak.addressCdc.StringToBytes(req.Address)
 	if err != nil {
 		return nil, err
 	}
@@ -238,10 +239,22 @@ func (ak AccountKeeper) AccountInfo(goCtx context.Context, req *types.QueryAccou
 
 	return &types.QueryAccountInfoResponse{
 		Info: &types.BaseAccount{
-			Address:       addr.String(),
+			Address:       req.Address,
 			PubKey:        pkAny,
 			AccountNumber: account.GetAccountNumber(),
 			Sequence:      account.GetSequence(),
 		},
 	}, nil
+}
+
+// BytesToString converts an address from bytes to string, using the
+// keeper's bech32 prefix.
+func (ak AccountKeeper) BytesToString(address []byte) (string, error) {
+	return ak.addressCdc.BytesToString(address)
+}
+
+// StringToBytes converts an address from string to bytes, using the
+// keeper's bech32 prefix.
+func (ak AccountKeeper) StringToBytes(address string) ([]byte, error) {
+	return ak.addressCdc.StringToBytes(address)
 }

@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"io"
 
-	dbm "github.com/tendermint/tm-db"
+	"cosmossdk.io/store/metrics"
+	pruningtypes "cosmossdk.io/store/pruning/types"
+	"cosmossdk.io/store/snapshots"
+	snapshottypes "cosmossdk.io/store/snapshots/types"
+	storetypes "cosmossdk.io/store/types"
+	dbm "github.com/cosmos/cosmos-db"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/snapshots"
-	snapshottypes "github.com/cosmos/cosmos-sdk/snapshots/types"
-	"github.com/cosmos/cosmos-sdk/store"
-	pruningtypes "github.com/cosmos/cosmos-sdk/store/pruning/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/mempool"
 )
@@ -70,9 +71,14 @@ func SetIAVLDisableFastNode(disable bool) func(*BaseApp) {
 	return func(bapp *BaseApp) { bapp.cms.SetIAVLDisableFastNode(disable) }
 }
 
+// SetIAVLLazyLoading enables/disables lazy loading of the IAVL store.
+func SetIAVLLazyLoading(lazyLoading bool) func(*BaseApp) {
+	return func(bapp *BaseApp) { bapp.cms.SetLazyLoading(lazyLoading) }
+}
+
 // SetInterBlockCache provides a BaseApp option function that sets the
 // inter-block cache.
-func SetInterBlockCache(cache sdk.MultiStorePersistentCache) func(*BaseApp) {
+func SetInterBlockCache(cache storetypes.MultiStorePersistentCache) func(*BaseApp) {
 	return func(app *BaseApp) { app.setInterBlockCache(cache) }
 }
 
@@ -84,6 +90,11 @@ func SetSnapshot(snapshotStore *snapshots.Store, opts snapshottypes.SnapshotOpti
 // SetMempool sets the mempool on BaseApp.
 func SetMempool(mempool mempool.Mempool) func(*BaseApp) {
 	return func(app *BaseApp) { app.SetMempool(mempool) }
+}
+
+// SetChainID sets the chain ID in BaseApp.
+func SetChainID(chainID string) func(*BaseApp) {
+	return func(app *BaseApp) { app.chainID = chainID }
 }
 
 func (app *BaseApp) SetName(name string) {
@@ -124,7 +135,7 @@ func (app *BaseApp) SetDB(db dbm.DB) {
 	app.db = db
 }
 
-func (app *BaseApp) SetCMS(cms store.CommitMultiStore) {
+func (app *BaseApp) SetCMS(cms storetypes.CommitMultiStore) {
 	if app.sealed {
 		panic("SetEndBlocker() on sealed BaseApp")
 	}
@@ -156,6 +167,22 @@ func (app *BaseApp) SetEndBlocker(endBlocker sdk.EndBlocker) {
 	app.endBlocker = endBlocker
 }
 
+func (app *BaseApp) SetPrepareCheckStater(prepareCheckStater sdk.PrepareCheckStater) {
+	if app.sealed {
+		panic("SetPrepareCheckStater() on sealed BaseApp")
+	}
+
+	app.prepareCheckStater = prepareCheckStater
+}
+
+func (app *BaseApp) SetPrecommiter(precommiter sdk.Precommiter) {
+	if app.sealed {
+		panic("SetPrecommiter() on sealed BaseApp")
+	}
+
+	app.precommiter = precommiter
+}
+
 func (app *BaseApp) SetAnteHandler(ah sdk.AnteHandler) {
 	if app.sealed {
 		panic("SetAnteHandler() on sealed BaseApp")
@@ -164,7 +191,7 @@ func (app *BaseApp) SetAnteHandler(ah sdk.AnteHandler) {
 	app.anteHandler = ah
 }
 
-func (app *BaseApp) SetPostHandler(ph sdk.AnteHandler) {
+func (app *BaseApp) SetPostHandler(ph sdk.PostHandler) {
 	if app.sealed {
 		panic("SetPostHandler() on sealed BaseApp")
 	}
@@ -216,7 +243,7 @@ func (app *BaseApp) SetSnapshot(snapshotStore *snapshots.Store, opts snapshottyp
 	if app.sealed {
 		panic("SetSnapshot() on sealed BaseApp")
 	}
-	if snapshotStore == nil || opts.Interval == snapshottypes.SnapshotIntervalOff {
+	if snapshotStore == nil {
 		app.snapshotManager = nil
 		return
 	}
@@ -229,17 +256,6 @@ func (app *BaseApp) SetInterfaceRegistry(registry types.InterfaceRegistry) {
 	app.interfaceRegistry = registry
 	app.grpcQueryRouter.SetInterfaceRegistry(registry)
 	app.msgServiceRouter.SetInterfaceRegistry(registry)
-}
-
-// SetStreamingService is used to set a streaming service into the BaseApp hooks and load the listeners into the multistore
-func (app *BaseApp) SetStreamingService(s StreamingService) {
-	// add the listeners for each StoreKey
-	for key, lis := range s.Listeners() {
-		app.cms.AddListeners(key, lis)
-	}
-	// register the StreamingService within the BaseApp
-	// BaseApp will pass BeginBlock, DeliverTx, and EndBlock requests and responses to the streaming services to update their ABCI context
-	app.abciListeners = append(app.abciListeners, s)
 }
 
 // SetTxDecoder sets the TxDecoder if it wasn't provided in the BaseApp constructor.
@@ -255,7 +271,7 @@ func (app *BaseApp) SetTxEncoder(txEncoder sdk.TxEncoder) {
 // SetQueryMultiStore set a alternative MultiStore implementation to support grpc query service.
 //
 // Ref: https://github.com/cosmos/cosmos-sdk/issues/13317
-func (app *BaseApp) SetQueryMultiStore(ms sdk.MultiStore) {
+func (app *BaseApp) SetQueryMultiStore(ms storetypes.MultiStore) {
 	app.qms = ms
 }
 
@@ -282,4 +298,18 @@ func (app *BaseApp) SetPrepareProposal(handler sdk.PrepareProposalHandler) {
 	}
 
 	app.prepareProposal = handler
+}
+
+// SetStoreMetrics sets the prepare proposal function for the BaseApp.
+func (app *BaseApp) SetStoreMetrics(gatherer metrics.StoreMetrics) {
+	if app.sealed {
+		panic("SetStoreMetrics() on sealed BaseApp")
+	}
+
+	app.cms.SetMetrics(gatherer)
+}
+
+// SetStreamingManager sets the streaming manager for the BaseApp.
+func (app *BaseApp) SetStreamingManager(manager storetypes.StreamingManager) {
+	app.streamingManager = manager
 }

@@ -30,10 +30,7 @@ import (
 //
 //	Infraction was committed at the current height or at a past height,
 //	not at a height in the future
-//	---
-//
-// Slash implementation doesn't require the infraction (types.Infraction) to work but the IS one does. It is here to have IS satisfy the Slash signature.
-func (k Keeper) Slash(ctx sdk.Context, consAddr sdk.ConsAddress, infractionHeight int64, power int64, slashFactor sdk.Dec, _ types.Infraction) math.Int {
+func (k Keeper) Slash(ctx sdk.Context, consAddr sdk.ConsAddress, infractionHeight, power int64, slashFactor sdk.Dec) math.Int {
 	logger := k.Logger(ctx)
 
 	if slashFactor.IsNegative() {
@@ -159,6 +156,11 @@ func (k Keeper) Slash(ctx sdk.Context, consAddr sdk.ConsAddress, infractionHeigh
 	return tokensToBurn
 }
 
+// SlashWithInfractionReason implementation doesn't require the infraction (types.Infraction) to work but is required by Interchain Security.
+func (k Keeper) SlashWithInfractionReason(ctx sdk.Context, consAddr sdk.ConsAddress, infractionHeight, power int64, slashFactor sdk.Dec, _ types.Infraction) math.Int {
+	return k.Slash(ctx, consAddr, infractionHeight, power, slashFactor)
+}
+
 // jail a validator
 func (k Keeper) Jail(ctx sdk.Context, consAddr sdk.ConsAddress) {
 	validator := k.mustGetValidatorByConsAddr(ctx, consAddr)
@@ -269,7 +271,10 @@ func (k Keeper) SlashRedelegation(ctx sdk.Context, srcValidator types.Validator,
 			panic(err)
 		}
 
-		delegatorAddress := sdk.MustAccAddressFromBech32(redelegation.DelegatorAddress)
+		delegatorAddress, err := k.authKeeper.StringToBytes(redelegation.DelegatorAddress)
+		if err != nil {
+			panic(err)
+		}
 
 		delegation, found := k.GetDelegation(ctx, delegatorAddress, valDstAddr)
 		if !found {

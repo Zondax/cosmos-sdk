@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tendermint/tendermint/libs/log"
+	"cosmossdk.io/core/address"
+	"cosmossdk.io/log"
+
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/crisis/types"
 )
@@ -26,12 +28,14 @@ type Keeper struct {
 	supplyKeeper types.SupplyKeeper
 
 	feeCollectorName string // name of the FeeCollector ModuleAccount
+
+	addressCodec address.Codec
 }
 
 // NewKeeper creates a new Keeper object
 func NewKeeper(
 	cdc codec.BinaryCodec, storeKey storetypes.StoreKey, invCheckPeriod uint,
-	supplyKeeper types.SupplyKeeper, feeCollectorName string, authority string,
+	supplyKeeper types.SupplyKeeper, feeCollectorName, authority string, ac address.Codec,
 ) *Keeper {
 	return &Keeper{
 		storeKey:         storeKey,
@@ -41,6 +45,7 @@ func NewKeeper(
 		supplyKeeper:     supplyKeeper,
 		feeCollectorName: feeCollectorName,
 		authority:        authority,
+		addressCodec:     ac,
 	}
 }
 
@@ -84,7 +89,9 @@ func (k *Keeper) AssertInvariants(ctx sdk.Context) {
 	n := len(invarRoutes)
 	for i, ir := range invarRoutes {
 		logger.Info("asserting crisis invariants", "inv", fmt.Sprint(i+1, "/", n), "name", ir.FullRoute())
-		if res, stop := ir.Invar(ctx); stop {
+
+		invCtx, _ := ctx.CacheContext()
+		if res, stop := ir.Invar(invCtx); stop {
 			// TODO: Include app name as part of context to allow for this to be
 			// variable.
 			panic(fmt.Errorf("invariant broken: %s\n"+

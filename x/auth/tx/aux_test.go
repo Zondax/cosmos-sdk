@@ -1,21 +1,19 @@
 package tx_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/depinject"
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/tx"
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
-	"github.com/cosmos/cosmos-sdk/x/auth/testutil"
 )
 
 var (
@@ -39,16 +37,9 @@ var (
 // Then it tests integrating the 2 AuxSignerData into a
 // client.TxBuilder created by the fee payer.
 func TestBuilderWithAux(t *testing.T) {
-	var (
-		interfaceRegistry codectypes.InterfaceRegistry
-		txConfig          client.TxConfig
-	)
-
-	err := depinject.Inject(testutil.AppConfig,
-		&interfaceRegistry,
-		&txConfig,
-	)
-	require.NoError(t, err)
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
+	interfaceRegistry := encodingConfig.InterfaceRegistry
+	txConfig := encodingConfig.TxConfig
 
 	testdata.RegisterInterfaces(interfaceRegistry)
 
@@ -140,17 +131,18 @@ func TestBuilderWithAux(t *testing.T) {
 		PubKey:   feepayerPk,
 		Sequence: 15,
 	})
-	signBz, err = txConfig.SignModeHandler().GetSignBytes(
-		signing.SignMode_SIGN_MODE_DIRECT,
-		authsigning.SignerData{
-			Address:       feepayerAddr.String(),
-			ChainID:       chainID,
-			AccountNumber: 11,
-			Sequence:      15,
-			PubKey:        feepayerPk,
-		},
-		w.GetTx(),
-	)
+	signerData := authsigning.SignerData{
+		Address:       feepayerAddr.String(),
+		ChainID:       chainID,
+		AccountNumber: 11,
+		Sequence:      15,
+		PubKey:        feepayerPk,
+	}
+
+	signBz, err = authsigning.GetSignBytesAdapter(
+		context.Background(), txConfig.TxEncoder(), txConfig.SignModeHandler(), signing.SignMode_SIGN_MODE_DIRECT,
+		signerData, w.GetTx())
+
 	require.NoError(t, err)
 	feepayerSig, err := feepayerPriv.Sign(signBz)
 	require.NoError(t, err)
@@ -196,7 +188,7 @@ func TestBuilderWithAux(t *testing.T) {
 	}, sigs[2])
 }
 
-func makeTipperTxBuilder(t *testing.T) (tx.AuxTxBuilder, []byte) {
+func makeTipperTxBuilder(t *testing.T) (clienttx.AuxTxBuilder, []byte) {
 	tipperBuilder := clienttx.NewAuxTxBuilder()
 	tipperBuilder.SetAddress(tipperAddr.String())
 	tipperBuilder.SetAccountNumber(1)

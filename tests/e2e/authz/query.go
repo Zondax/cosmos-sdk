@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/codec/address"
 	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
@@ -13,7 +14,7 @@ import (
 	authzclitestutil "github.com/cosmos/cosmos-sdk/x/authz/client/testutil"
 )
 
-func (s *IntegrationTestSuite) TestQueryAuthorizations() {
+func (s *E2ETestSuite) TestQueryAuthorizations() {
 	val := s.network.Validators[0]
 
 	grantee := s.grantee[0]
@@ -76,7 +77,7 @@ func (s *IntegrationTestSuite) TestQueryAuthorizations() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			cmd := cli.GetCmdQueryGrants()
+			cmd := cli.GetCmdQueryGrants(address.NewBech32Codec("cosmos"))
 			clientCtx := val.ClientCtx
 			resp, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
 			if tc.expectErr {
@@ -92,7 +93,7 @@ func (s *IntegrationTestSuite) TestQueryAuthorizations() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestQueryAuthorization() {
+func (s *E2ETestSuite) TestQueryAuthorization() {
 	val := s.network.Validators[0]
 
 	grantee := s.grantee[0]
@@ -180,7 +181,7 @@ func (s *IntegrationTestSuite) TestQueryAuthorization() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			cmd := cli.GetCmdQueryGrants()
+			cmd := cli.GetCmdQueryGrants(address.NewBech32Codec("cosmos"))
 			clientCtx := val.ClientCtx
 			out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
 			if tc.expectErr {
@@ -193,7 +194,7 @@ func (s *IntegrationTestSuite) TestQueryAuthorization() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestQueryGranterGrants() {
+func (s *E2ETestSuite) TestQueryGranterGrants() {
 	val := s.network.Validators[0]
 	grantee := s.grantee[0]
 	require := s.Require()
@@ -233,7 +234,7 @@ func (s *IntegrationTestSuite) TestQueryGranterGrants() {
 			},
 			false,
 			"",
-			8,
+			7,
 		},
 		{
 			"valid case with pagination",
@@ -249,7 +250,7 @@ func (s *IntegrationTestSuite) TestQueryGranterGrants() {
 	}
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			cmd := cli.GetQueryGranterGrants()
+			cmd := cli.GetQueryGranterGrants(address.NewBech32Codec("cosmos"))
 			clientCtx := val.ClientCtx
 			out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
 			if tc.expectErr {

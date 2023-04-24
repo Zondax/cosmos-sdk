@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"math"
 
-	db "github.com/tendermint/tm-db"
+	db "github.com/cosmos/cosmos-db"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/store/types"
 )
 
 // DefaultPage is the default `page` number for queries.
@@ -52,7 +52,7 @@ func ParsePagination(pageReq *PageRequest) (page, limit int, err error) {
 func Paginate(
 	prefixStore types.KVStore,
 	pageRequest *PageRequest,
-	onResult func(key []byte, value []byte) error,
+	onResult func(key, value []byte) error,
 ) (*PageResponse, error) {
 	// if the PageRequest is nil, use default PageRequest
 	if pageRequest == nil {

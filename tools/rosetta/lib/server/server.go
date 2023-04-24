@@ -6,13 +6,13 @@ import (
 	"os"
 	"time"
 
-	assert "github.com/coinbase/rosetta-sdk-go/asserter"
-	"github.com/coinbase/rosetta-sdk-go/server"
 	"github.com/coinbase/rosetta-sdk-go/types"
+	assert "github.com/cosmos/rosetta-sdk-go/asserter"
+	"github.com/cosmos/rosetta-sdk-go/server"
 
+	"cosmossdk.io/log"
 	"cosmossdk.io/tools/rosetta/lib/internal/service"
 	crgtypes "cosmossdk.io/tools/rosetta/lib/types"
-	"github.com/tendermint/tendermint/libs/log"
 )
 
 const (
@@ -45,7 +45,7 @@ type Server struct {
 
 func (h Server) Start() error {
 	h.logger.Info(fmt.Sprintf("Rosetta server listening on add %s", h.addr))
-	return http.ListenAndServe(h.addr, h.h) //nolint:gosec
+	return http.ListenAndServe(h.addr, h.h) //nolint:gosec // users are recommended to operate a proxy in front of this server
 }
 
 func NewServer(settings Settings) (Server, error) {
@@ -61,7 +61,7 @@ func NewServer(settings Settings) (Server, error) {
 		return Server{}, fmt.Errorf("cannot build asserter: %w", err)
 	}
 
-	logger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+	logger := log.NewLogger(os.Stdout).With(log.ModuleKey, "rosetta")
 
 	var adapter crgtypes.API
 	switch settings.Offline {
@@ -115,7 +115,7 @@ func newOnlineAdapter(settings Settings, logger log.Logger) (crgtypes.API, error
 	for i := 0; i < settings.Retries; i++ {
 		err = settings.Client.Ready()
 		if err != nil {
-			logger.Error(fmt.Sprintf("[Rosetta]- Client is not ready: %v. Retrying ...", err))
+			logger.Error("[Rosetta]- Client is not ready. Retrying ...", "error", err)
 			time.Sleep(settings.RetryWait)
 			continue
 		}

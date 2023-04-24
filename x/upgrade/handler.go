@@ -1,11 +1,14 @@
 package upgrade
 
 import (
+	"cosmossdk.io/x/upgrade/keeper"
+	"cosmossdk.io/x/upgrade/types"
+
+	errorsmod "cosmossdk.io/errors"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
-	"github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
-	"github.com/cosmos/cosmos-sdk/x/upgrade/types"
 )
 
 // NewSoftwareUpgradeProposalHandler creates a governance handler to manage new proposal types.
@@ -13,7 +16,7 @@ import (
 // to abort a previously voted upgrade.
 //
 //nolint:staticcheck // we are intentionally using a deprecated proposal here.
-func NewSoftwareUpgradeProposalHandler(k keeper.Keeper) govtypes.Handler {
+func NewSoftwareUpgradeProposalHandler(k *keeper.Keeper) govtypes.Handler {
 	return func(ctx sdk.Context, content govtypes.Content) error {
 		switch c := content.(type) {
 		case *types.SoftwareUpgradeProposal:
@@ -23,18 +26,18 @@ func NewSoftwareUpgradeProposalHandler(k keeper.Keeper) govtypes.Handler {
 			return handleCancelSoftwareUpgradeProposal(ctx, k, c)
 
 		default:
-			return sdkerrors.Wrapf(sdkerrors.ErrUnknownRequest, "unrecognized software upgrade proposal content type: %T", c)
+			return errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "unrecognized software upgrade proposal content type: %T", c)
 		}
 	}
 }
 
 //nolint:staticcheck // we are intentionally using a deprecated proposal here.
-func handleSoftwareUpgradeProposal(ctx sdk.Context, k keeper.Keeper, p *types.SoftwareUpgradeProposal) error {
+func handleSoftwareUpgradeProposal(ctx sdk.Context, k *keeper.Keeper, p *types.SoftwareUpgradeProposal) error {
 	return k.ScheduleUpgrade(ctx, p.Plan)
 }
 
 //nolint:staticcheck // we are intentionally using a deprecated proposal here.
-func handleCancelSoftwareUpgradeProposal(ctx sdk.Context, k keeper.Keeper, _ *types.CancelSoftwareUpgradeProposal) error {
+func handleCancelSoftwareUpgradeProposal(ctx sdk.Context, k *keeper.Keeper, _ *types.CancelSoftwareUpgradeProposal) error {
 	k.ClearUpgradePlan(ctx)
 	return nil
 }

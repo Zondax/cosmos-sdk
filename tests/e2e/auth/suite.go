@@ -3,22 +3,19 @@ package auth
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-	tmcli "github.com/tendermint/tendermint/libs/cli"
-
 	"cosmossdk.io/depinject"
 	"cosmossdk.io/math"
+	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	kmultisig "github.com/cosmos/cosmos-sdk/crypto/keys/multisig"
@@ -41,20 +38,19 @@ import (
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 )
 
-type IntegrationTestSuite struct {
+type E2ETestSuite struct {
 	suite.Suite
 
 	cfg     network.Config
 	network *network.Network
 }
 
-func NewIntegrationTestSuite(cfg network.Config) *IntegrationTestSuite {
-	return &IntegrationTestSuite{cfg: cfg}
+func NewE2ETestSuite(cfg network.Config) *E2ETestSuite {
+	return &E2ETestSuite{cfg: cfg}
 }
 
-func (s *IntegrationTestSuite) SetupSuite() {
-	s.T().Log("setting up integration test suite")
-
+func (s *E2ETestSuite) SetupSuite() {
+	s.T().Log("setting up e2e test suite")
 	var err error
 	s.network, err = network.New(s.T(), s.T().TempDir(), s.cfg)
 	s.Require().NoError(err)
@@ -83,12 +79,12 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.Require().NoError(s.network.WaitForNextBlock())
 }
 
-func (s *IntegrationTestSuite) TearDownSuite() {
-	s.T().Log("tearing down integration test suite")
+func (s *E2ETestSuite) TearDownSuite() {
+	s.T().Log("tearing down e2e test suite")
 	s.network.Cleanup()
 }
 
-func (s *IntegrationTestSuite) TestCLIValidateSignatures() {
+func (s *E2ETestSuite) TestCLIValidateSignatures() {
 	val := s.network.Validators[0]
 	sendTokens := sdk.NewCoins(
 		sdk.NewCoin(fmt.Sprintf("%stoken", val.Moniker), sdk.NewInt(10)),
@@ -124,7 +120,7 @@ func (s *IntegrationTestSuite) TestCLIValidateSignatures() {
 	s.Require().EqualError(err, "signatures validation failed")
 }
 
-func (s *IntegrationTestSuite) TestCLISignGenOnly() {
+func (s *E2ETestSuite) TestCLISignGenOnly() {
 	val := s.network.Validators[0]
 	val2 := s.network.Validators[1]
 
@@ -224,7 +220,7 @@ func (s *IntegrationTestSuite) TestCLISignGenOnly() {
 
 	for _, tc := range cases {
 		cmd := authcli.GetSignCommand()
-		tmcli.PrepareBaseCmd(cmd, "", "")
+		cmd.PersistentFlags().String(flags.FlagHome, val.ClientCtx.HomeDir, "directory for config and data")
 		out, err := clitestutil.ExecTestCLICmd(val.ClientCtx, cmd, append(tc.args, commonArgs...))
 		if tc.expErr {
 			s.Require().Error(err)
@@ -241,7 +237,7 @@ func (s *IntegrationTestSuite) TestCLISignGenOnly() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestCLISignBatch() {
+func (s *E2ETestSuite) TestCLISignBatch() {
 	val := s.network.Validators[0]
 	sendTokens := sdk.NewCoins(
 		sdk.NewCoin(fmt.Sprintf("%stoken", val.Moniker), sdk.NewInt(10)),
@@ -328,7 +324,7 @@ func (s *IntegrationTestSuite) TestCLISignBatch() {
 	s.Require().Equal(sigs[0].Sequence, seq1)
 }
 
-func (s *IntegrationTestSuite) TestCliGetAccountAddressByID() {
+func (s *E2ETestSuite) TestCliGetAccountAddressByID() {
 	require := s.Require()
 	val1 := s.network.Validators[0]
 	testCases := []struct {
@@ -372,109 +368,7 @@ func (s *IntegrationTestSuite) TestCliGetAccountAddressByID() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestCLISignAminoJSON() {
-	require := s.Require()
-	val1 := s.network.Validators[0]
-	txCfg := val1.ClientCtx.TxConfig
-	sendTokens := sdk.NewCoins(
-		sdk.NewCoin(fmt.Sprintf("%stoken", val1.Moniker), sdk.NewInt(10)),
-		sdk.NewCoin(s.cfg.BondDenom, sdk.NewInt(10)),
-	)
-	txBz, err := s.createBankMsg(val1, val1.Address,
-		sendTokens, fmt.Sprintf("--%s=true", flags.FlagGenerateOnly))
-	require.NoError(err)
-	fileUnsigned := testutil.WriteToNewTempFile(s.T(), txBz.String())
-	defer fileUnsigned.Close()
-	chainFlag := fmt.Sprintf("--%s=%s", flags.FlagChainID, val1.ClientCtx.ChainID)
-	sigOnlyFlag := "--signature-only"
-	signModeAminoFlag := "--sign-mode=amino-json"
-
-	// SIC! validators have same key names and same addresses as those registered in the keyring,
-	//      BUT the keys are different!
-	valRecord, err := val1.ClientCtx.Keyring.Key(val1.Moniker)
-	require.NoError(err)
-
-	// query account info
-	queryResJSON, err := authclitestutil.QueryAccountExec(val1.ClientCtx, val1.Address)
-	require.NoError(err)
-	var account authtypes.AccountI
-	require.NoError(val1.ClientCtx.Codec.UnmarshalInterfaceJSON(queryResJSON.Bytes(), &account))
-
-	/****  test signature-only  ****/
-	res, err := authclitestutil.TxSignExec(val1.ClientCtx, val1.Address, fileUnsigned.Name(), chainFlag,
-		sigOnlyFlag, signModeAminoFlag)
-	require.NoError(err)
-	pub, err := valRecord.GetPubKey()
-	require.NoError(err)
-	checkSignatures(require, txCfg, res.Bytes(), pub)
-	sigs, err := txCfg.UnmarshalSignatureJSON(res.Bytes())
-	require.NoError(err)
-	require.Equal(1, len(sigs))
-	require.Equal(account.GetSequence(), sigs[0].Sequence)
-
-	/****  test full output  ****/
-	res, err = authclitestutil.TxSignExec(val1.ClientCtx, val1.Address, fileUnsigned.Name(), chainFlag, signModeAminoFlag)
-	require.NoError(err)
-
-	// txCfg.UnmarshalSignatureJSON can't unmarshal a fragment of the signature, so we create this structure.
-	type txFragment struct {
-		Signatures []json.RawMessage
-	}
-	var txOut txFragment
-	err = json.Unmarshal(res.Bytes(), &txOut)
-	require.NoError(err)
-	require.Len(txOut.Signatures, 1)
-
-	/****  test file output  ****/
-	filenameSigned := filepath.Join(s.T().TempDir(), "test_sign_out.json")
-	fileFlag := fmt.Sprintf("--%s=%s", flags.FlagOutputDocument, filenameSigned)
-	_, err = authclitestutil.TxSignExec(val1.ClientCtx, val1.Address, fileUnsigned.Name(), chainFlag, fileFlag, signModeAminoFlag)
-	require.NoError(err)
-	fContent, err := os.ReadFile(filenameSigned)
-	require.NoError(err)
-	require.Equal(res.String(), string(fContent))
-
-	/****  try to append to the previously signed transaction  ****/
-	res, err = authclitestutil.TxSignExec(val1.ClientCtx, val1.Address, filenameSigned, chainFlag,
-		sigOnlyFlag, signModeAminoFlag)
-	require.NoError(err)
-	checkSignatures(require, txCfg, res.Bytes(), pub, pub)
-
-	/****  try to overwrite the previously signed transaction  ****/
-
-	// We can't sign with other address, because the bank send message supports only one signer for a simple
-	// account. Changing the file is too much hacking, because TxDecoder returns sdk.Tx, which doesn't
-	// provide functionality to check / manage `auth_info`.
-	// Cases with different keys are are covered in unit tests of `tx.Sign`.
-	res, err = authclitestutil.TxSignExec(val1.ClientCtx, val1.Address, filenameSigned, chainFlag,
-		sigOnlyFlag, "--overwrite", signModeAminoFlag)
-	require.NoError(err)
-	checkSignatures(require, txCfg, res.Bytes(), pub)
-
-	/****  test flagAmino  ****/
-	res, err = authclitestutil.TxSignExec(val1.ClientCtx, val1.Address, filenameSigned, chainFlag,
-		"--amino=true", signModeAminoFlag)
-	require.NoError(err)
-
-	var txAmino authcli.BroadcastReq
-	err = val1.ClientCtx.LegacyAmino.UnmarshalJSON(res.Bytes(), &txAmino)
-	require.NoError(err)
-	require.Len(txAmino.Tx.Signatures, 2)
-	require.Equal(txAmino.Tx.Signatures[0].PubKey, pub)
-	require.Equal(txAmino.Tx.Signatures[1].PubKey, pub)
-}
-
-func checkSignatures(require *require.Assertions, txCfg client.TxConfig, output []byte, pks ...cryptotypes.PubKey) {
-	sigs, err := txCfg.UnmarshalSignatureJSON(output)
-	require.NoError(err, string(output))
-	require.Len(sigs, len(pks))
-	for i := range pks {
-		require.True(sigs[i].PubKey.Equals(pks[i]), "Pub key doesn't match. Got: %s, expected: %s, idx: %d", sigs[i].PubKey, pks[i], i)
-		require.NotEmpty(sigs[i].Data)
-	}
-}
-
-func (s *IntegrationTestSuite) TestCLIQueryTxCmdByHash() {
+func (s *E2ETestSuite) TestCLIQueryTxCmdByHash() {
 	val := s.network.Validators[0]
 
 	account2, err := val.ClientCtx.Keyring.Key("newAccount2")
@@ -530,9 +424,15 @@ func (s *IntegrationTestSuite) TestCLIQueryTxCmdByHash() {
 		s.Run(tc.name, func() {
 			cmd := authcli.QueryTxCmd()
 			clientCtx := val.ClientCtx
+			var (
+				out testutil.BufferWriter
+				err error
+			)
 
-			out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
-
+			err = s.network.RetryForBlocks(func() error {
+				out, err = clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
+				return err
+			}, 2)
 			if tc.expectErr {
 				s.Require().Error(err)
 				s.Require().NotEqual("internal", err.Error())
@@ -540,13 +440,15 @@ func (s *IntegrationTestSuite) TestCLIQueryTxCmdByHash() {
 				var result sdk.TxResponse
 				s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(out.Bytes(), &result))
 				s.Require().NotNil(result.Height)
-				s.Require().Contains(result.RawLog, tc.rawLogContains)
+				if ok := s.deepContains(result.Events, tc.rawLogContains); !ok {
+					s.Require().Fail("raw log does not contain the expected value, expected value: %s", tc.rawLogContains)
+				}
 			}
 		})
 	}
 }
 
-func (s *IntegrationTestSuite) TestCLIQueryTxCmdByEvents() {
+func (s *E2ETestSuite) TestCLIQueryTxCmdByEvents() {
 	val := s.network.Validators[0]
 
 	account2, err := val.ClientCtx.Keyring.Key("newAccount2")
@@ -568,7 +470,10 @@ func (s *IntegrationTestSuite) TestCLIQueryTxCmdByEvents() {
 	s.Require().NoError(s.network.WaitForNextBlock())
 
 	// Query the tx by hash to get the inner tx.
-	out, err = clitestutil.ExecTestCLICmd(val.ClientCtx, authcli.QueryTxCmd(), []string{txRes.TxHash, fmt.Sprintf("--%s=json", flags.FlagOutput)})
+	err = s.network.RetryForBlocks(func() error {
+		out, err = clitestutil.ExecTestCLICmd(val.ClientCtx, authcli.QueryTxCmd(), []string{txRes.TxHash, fmt.Sprintf("--%s=json", flags.FlagOutput)})
+		return err
+	}, 3)
 	s.Require().NoError(err)
 	s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(out.Bytes(), &txRes))
 	protoTx := txRes.GetTx().(*tx.Tx)
@@ -663,7 +568,7 @@ func (s *IntegrationTestSuite) TestCLIQueryTxCmdByEvents() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestCLIQueryTxsCmdByEvents() {
+func (s *E2ETestSuite) TestCLIQueryTxsCmdByEvents() {
 	val := s.network.Validators[0]
 
 	account2, err := val.ClientCtx.Keyring.Key("newAccount2")
@@ -685,7 +590,10 @@ func (s *IntegrationTestSuite) TestCLIQueryTxsCmdByEvents() {
 	s.Require().NoError(s.network.WaitForNextBlock())
 
 	// Query the tx by hash to get the inner tx.
-	out, err = clitestutil.ExecTestCLICmd(val.ClientCtx, authcli.QueryTxCmd(), []string{txRes.TxHash, fmt.Sprintf("--%s=json", flags.FlagOutput)})
+	err = s.network.RetryForBlocks(func() error {
+		out, err = clitestutil.ExecTestCLICmd(val.ClientCtx, authcli.QueryTxCmd(), []string{txRes.TxHash, fmt.Sprintf("--%s=json", flags.FlagOutput)})
+		return err
+	}, 3)
 	s.Require().NoError(err)
 	s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(out.Bytes(), &txRes))
 
@@ -697,8 +605,10 @@ func (s *IntegrationTestSuite) TestCLIQueryTxsCmdByEvents() {
 		{
 			"fee event happy case",
 			[]string{
-				fmt.Sprintf("--events=tx.fee=%s",
-					sdk.NewCoins(sdk.NewCoin(s.cfg.BondDenom, sdk.NewInt(10))).String()),
+				fmt.Sprintf(
+					"--query=tx.fee='%s'",
+					sdk.NewCoins(sdk.NewCoin(s.cfg.BondDenom, sdk.NewInt(10))).String(),
+				),
 				fmt.Sprintf("--%s=json", flags.FlagOutput),
 			},
 			false,
@@ -706,8 +616,10 @@ func (s *IntegrationTestSuite) TestCLIQueryTxsCmdByEvents() {
 		{
 			"no matching fee event",
 			[]string{
-				fmt.Sprintf("--events=tx.fee=%s",
-					sdk.NewCoins(sdk.NewCoin(s.cfg.BondDenom, sdk.NewInt(0))).String()),
+				fmt.Sprintf(
+					"--query=tx.fee='%s'",
+					sdk.NewCoins(sdk.NewCoin(s.cfg.BondDenom, sdk.NewInt(0))).String(),
+				),
 				fmt.Sprintf("--%s=json", flags.FlagOutput),
 			},
 			true,
@@ -736,7 +648,7 @@ func (s *IntegrationTestSuite) TestCLIQueryTxsCmdByEvents() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestCLISendGenerateSignAndBroadcast() {
+func (s *E2ETestSuite) TestCLISendGenerateSignAndBroadcast() {
 	val1 := s.network.Validators[0]
 
 	account, err := val1.ClientCtx.Keyring.Key("newAccount")
@@ -865,7 +777,10 @@ func (s *IntegrationTestSuite) TestCLISendGenerateSignAndBroadcast() {
 	s.Require().NoError(s.network.WaitForNextBlock())
 
 	// Ensure destiny account state
-	resp, err = clitestutil.QueryBalancesExec(val1.ClientCtx, addr)
+	err = s.network.RetryForBlocks(func() error {
+		resp, err = clitestutil.QueryBalancesExec(val1.ClientCtx, addr)
+		return err
+	}, 3)
 	s.Require().NoError(err)
 
 	err = val1.ClientCtx.Codec.UnmarshalJSON(resp.Bytes(), &balRes)
@@ -880,7 +795,7 @@ func (s *IntegrationTestSuite) TestCLISendGenerateSignAndBroadcast() {
 	s.Require().NoError(err)
 }
 
-func (s *IntegrationTestSuite) TestCLIMultisignInsufficientCosigners() {
+func (s *E2ETestSuite) TestCLIMultisignInsufficientCosigners() {
 	val1 := s.network.Validators[0]
 
 	// Fetch account and a multisig info
@@ -943,7 +858,7 @@ func (s *IntegrationTestSuite) TestCLIMultisignInsufficientCosigners() {
 	s.Require().Error(err)
 }
 
-func (s *IntegrationTestSuite) TestCLIEncode() {
+func (s *E2ETestSuite) TestCLIEncode() {
 	val1 := s.network.Validators[0]
 
 	sendTokens := sdk.NewCoin(s.cfg.BondDenom, sdk.TokensFromConsensusPower(10, sdk.DefaultPowerReduction))
@@ -975,7 +890,7 @@ func (s *IntegrationTestSuite) TestCLIEncode() {
 	s.Require().Equal("deadbeef", txBuilder.GetTx().GetMemo())
 }
 
-func (s *IntegrationTestSuite) TestCLIMultisignSortSignatures() {
+func (s *E2ETestSuite) TestCLIMultisignSortSignatures() {
 	val1 := s.network.Validators[0]
 
 	// Generate 2 accounts and a multisig.
@@ -1002,7 +917,6 @@ func (s *IntegrationTestSuite) TestCLIMultisignSortSignatures() {
 	s.Require().NoError(err)
 	intialCoins := balRes.Balances
 
-	s.Require().NoError(s.network.WaitForNextBlock())
 	// Send coins from validator to multisig.
 	sendTokens := sdk.NewInt64Coin(s.cfg.BondDenom, 10)
 	_, err = s.createBankMsg(
@@ -1083,7 +997,7 @@ func (s *IntegrationTestSuite) TestCLIMultisignSortSignatures() {
 	s.Require().NoError(s.network.WaitForNextBlock())
 }
 
-func (s *IntegrationTestSuite) TestSignWithMultisig() {
+func (s *E2ETestSuite) TestSignWithMultisig() {
 	val1 := s.network.Validators[0]
 
 	// Generate a account for signing.
@@ -1125,7 +1039,7 @@ func (s *IntegrationTestSuite) TestSignWithMultisig() {
 	s.Require().Contains(err.Error(), "error getting account from keybase")
 }
 
-func (s *IntegrationTestSuite) TestCLIMultisign() {
+func (s *E2ETestSuite) TestCLIMultisign() {
 	val1 := s.network.Validators[0]
 
 	// Generate 2 accounts and a multisig.
@@ -1151,11 +1065,14 @@ func (s *IntegrationTestSuite) TestCLIMultisign() {
 	s.Require().NoError(err)
 	s.Require().NoError(s.network.WaitForNextBlock())
 
-	resp, err := clitestutil.QueryBalancesExec(val1.ClientCtx, addr)
-	s.Require().NoError(err)
-
 	var balRes banktypes.QueryAllBalancesResponse
-	err = val1.ClientCtx.Codec.UnmarshalJSON(resp.Bytes(), &balRes)
+	err = s.network.RetryForBlocks(func() error {
+		resp, err := clitestutil.QueryBalancesExec(val1.ClientCtx, addr)
+		if err != nil {
+			return err
+		}
+		return val1.ClientCtx.Codec.UnmarshalJSON(resp.Bytes(), &balRes)
+	}, 3)
 	s.Require().NoError(err)
 	s.Require().True(sendTokens.Amount.Equal(balRes.Balances.AmountOf(s.cfg.BondDenom)))
 
@@ -1197,9 +1114,20 @@ func (s *IntegrationTestSuite) TestCLIMultisign() {
 	sign2File := testutil.WriteToNewTempFile(s.T(), account2Signature.String())
 	defer sign2File.Close()
 
-	// Does not work in offline mode.
-	_, err = authclitestutil.TxMultiSignExec(val1.ClientCtx, multisigRecord.Name, multiGeneratedTxFile.Name(), "--offline", sign1File.Name(), sign2File.Name())
-	s.Require().EqualError(err, fmt.Sprintf("couldn't verify signature for address %s", addr1))
+	// Work in offline mode.
+	multisigAccNum, multisigSeq, err := val1.ClientCtx.AccountRetriever.GetAccountNumberSequence(val1.ClientCtx, addr)
+	s.Require().NoError(err)
+	_, err = authclitestutil.TxMultiSignExec(
+		val1.ClientCtx,
+		multisigRecord.Name,
+		multiGeneratedTxFile.Name(),
+		fmt.Sprintf("--%s", flags.FlagOffline),
+		fmt.Sprintf("--%s=%d", flags.FlagAccountNumber, multisigAccNum),
+		fmt.Sprintf("--%s=%d", flags.FlagSequence, multisigSeq),
+		sign1File.Name(),
+		sign2File.Name(),
+	)
+	s.Require().NoError(err)
 
 	val1.ClientCtx.Offline = false
 	multiSigWith2Signatures, err := authclitestutil.TxMultiSignExec(val1.ClientCtx, multisigRecord.Name, multiGeneratedTxFile.Name(), sign1File.Name(), sign2File.Name())
@@ -1219,7 +1147,7 @@ func (s *IntegrationTestSuite) TestCLIMultisign() {
 	s.Require().NoError(s.network.WaitForNextBlock())
 }
 
-func (s *IntegrationTestSuite) TestSignBatchMultisig() {
+func (s *E2ETestSuite) TestSignBatchMultisig() {
 	val := s.network.Validators[0]
 
 	// Fetch 2 accounts and a multisig.
@@ -1284,7 +1212,7 @@ func (s *IntegrationTestSuite) TestSignBatchMultisig() {
 	s.Require().NoError(err)
 }
 
-func (s *IntegrationTestSuite) TestMultisignBatch() {
+func (s *E2ETestSuite) TestMultisignBatch() {
 	val := s.network.Validators[0]
 
 	// Fetch 2 accounts and a multisig.
@@ -1326,9 +1254,9 @@ func (s *IntegrationTestSuite) TestMultisignBatch() {
 	defer filename.Close()
 	val.ClientCtx.HomeDir = strings.Replace(val.ClientCtx.HomeDir, "simd", "simcli", 1)
 
-	queryResJSON, err := authclitestutil.QueryAccountExec(val.ClientCtx, addr)
+	queryResJSON, err := authclitestutil.QueryAccountExec(val.ClientCtx, addr, address.NewBech32Codec("cosmos"))
 	s.Require().NoError(err)
-	var account authtypes.AccountI
+	var account sdk.AccountI
 	s.Require().NoError(val.ClientCtx.Codec.UnmarshalInterfaceJSON(queryResJSON.Bytes(), &account))
 
 	// sign-batch file
@@ -1368,7 +1296,7 @@ func (s *IntegrationTestSuite) TestMultisignBatch() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetAccountCmd() {
+func (s *E2ETestSuite) TestGetAccountCmd() {
 	val := s.network.Validators[0]
 	_, _, addr1 := testdata.KeyTestPubAddr()
 
@@ -1394,12 +1322,12 @@ func (s *IntegrationTestSuite) TestGetAccountCmd() {
 		s.Run(tc.name, func() {
 			clientCtx := val.ClientCtx
 
-			out, err := authclitestutil.QueryAccountExec(clientCtx, tc.address)
+			out, err := authclitestutil.QueryAccountExec(clientCtx, tc.address, address.NewBech32Codec("cosmos"))
 			if tc.expectErr {
 				s.Require().Error(err)
 				s.Require().NotEqual("internal", err.Error())
 			} else {
-				var acc authtypes.AccountI
+				var acc sdk.AccountI
 				s.Require().NoError(val.ClientCtx.Codec.UnmarshalInterfaceJSON(out.Bytes(), &acc))
 				s.Require().Equal(val.Address, acc.GetAddress())
 			}
@@ -1407,7 +1335,7 @@ func (s *IntegrationTestSuite) TestGetAccountCmd() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetAccountsCmd() {
+func (s *E2ETestSuite) TestGetAccountsCmd() {
 	val := s.network.Validators[0]
 	clientCtx := val.ClientCtx
 
@@ -1421,7 +1349,7 @@ func (s *IntegrationTestSuite) TestGetAccountsCmd() {
 	s.Require().NotEmpty(res.Accounts)
 }
 
-func (s *IntegrationTestSuite) TestQueryModuleAccountByNameCmd() {
+func (s *E2ETestSuite) TestQueryModuleAccountByNameCmd() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -1457,11 +1385,11 @@ func (s *IntegrationTestSuite) TestQueryModuleAccountByNameCmd() {
 				var res authtypes.QueryModuleAccountByNameResponse
 				s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(out.Bytes(), &res))
 
-				var account authtypes.AccountI
+				var account sdk.AccountI
 				err := val.ClientCtx.InterfaceRegistry.UnpackAny(res.Account, &account)
 				s.Require().NoError(err)
 
-				moduleAccount, ok := account.(authtypes.ModuleAccountI)
+				moduleAccount, ok := account.(sdk.ModuleAccountI)
 				s.Require().True(ok)
 				s.Require().Equal(tc.moduleName, moduleAccount.GetName())
 			}
@@ -1469,7 +1397,7 @@ func (s *IntegrationTestSuite) TestQueryModuleAccountByNameCmd() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestQueryModuleAccountsCmd() {
+func (s *E2ETestSuite) TestQueryModuleAccountsCmd() {
 	val := s.network.Validators[0]
 	clientCtx := val.ClientCtx
 
@@ -1525,7 +1453,7 @@ func TestGetBroadcastCommandWithoutOfflineFlag(t *testing.T) {
 	require.Contains(t, out.String(), "connect: connection refused")
 }
 
-func (s *IntegrationTestSuite) TestQueryParamsCmd() {
+func (s *E2ETestSuite) TestQueryParamsCmd() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -1567,7 +1495,7 @@ func (s *IntegrationTestSuite) TestQueryParamsCmd() {
 // TestTxWithoutPublicKey makes sure sending a proto tx message without the
 // public key doesn't cause any error in the RPC layer (broadcast).
 // See https://github.com/cosmos/cosmos-sdk/issues/7585 for more details.
-func (s *IntegrationTestSuite) TestTxWithoutPublicKey() {
+func (s *E2ETestSuite) TestTxWithoutPublicKey() {
 	val1 := s.network.Validators[0]
 	txCfg := val1.ClientCtx.TxConfig
 
@@ -1584,7 +1512,7 @@ func (s *IntegrationTestSuite) TestTxWithoutPublicKey() {
 	sigV2 := signing.SignatureV2{
 		PubKey: val1.PubKey,
 		Data: &signing.SingleSignatureData{
-			SignMode:  txCfg.SignModeHandler().DefaultMode(),
+			SignMode:  signing.SignMode_SIGN_MODE_DIRECT,
 			Signature: nil,
 		},
 	}
@@ -1628,7 +1556,7 @@ func (s *IntegrationTestSuite) TestTxWithoutPublicKey() {
 // messages which has to be signed with 2 different keys. Sign and append the
 // signatures using the CLI with Amino signing mode. Finally, send the
 // transaction to the blockchain.
-func (s *IntegrationTestSuite) TestSignWithMultiSignersAminoJSON() {
+func (s *E2ETestSuite) TestSignWithMultiSignersAminoJSON() {
 	require := s.Require()
 	val0, val1 := s.network.Validators[0], s.network.Validators[1]
 	val0Coin := sdk.NewCoin(fmt.Sprintf("%stoken", val0.Moniker), sdk.NewInt(10))
@@ -1684,7 +1612,6 @@ func (s *IntegrationTestSuite) TestSignWithMultiSignersAminoJSON() {
 	)
 	require.NoError(err)
 	require.NoError(s.network.WaitForNextBlock())
-	require.NoError(s.network.WaitForNextBlock())
 
 	var txRes sdk.TxResponse
 	require.NoError(val0.ClientCtx.Codec.UnmarshalJSON(res.Bytes(), &txRes))
@@ -1699,7 +1626,7 @@ func (s *IntegrationTestSuite) TestSignWithMultiSignersAminoJSON() {
 	require.Equal(sdk.NewCoins(val0Coin, val1Coin), queryRes.Balances)
 }
 
-func (s *IntegrationTestSuite) TestAuxSigner() {
+func (s *E2ETestSuite) TestAuxSigner() {
 	require := s.Require()
 	val := s.network.Validators[0]
 	val0Coin := sdk.NewCoin(fmt.Sprintf("%stoken", val.Moniker), sdk.NewInt(10))
@@ -1755,7 +1682,7 @@ func (s *IntegrationTestSuite) TestAuxSigner() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestAuxToFeeWithTips() {
+func (s *E2ETestSuite) TestAuxToFeeWithTips() {
 	// Skipping this test as it needs a simapp with the TipDecorator in post handler.
 	s.T().Skip()
 
@@ -2014,7 +1941,7 @@ func (s *IntegrationTestSuite) TestAuxToFeeWithTips() {
 	}
 }
 
-func (s *IntegrationTestSuite) createBankMsg(val *network.Validator, toAddr sdk.AccAddress, amount sdk.Coins, extraFlags ...string) (testutil.BufferWriter, error) {
+func (s *E2ETestSuite) createBankMsg(val *network.Validator, toAddr sdk.AccAddress, amount sdk.Coins, extraFlags ...string) (testutil.BufferWriter, error) {
 	flags := []string{
 		fmt.Sprintf("--%s=true", flags.FlagSkipConfirmation),
 		fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastSync),
@@ -2026,7 +1953,7 @@ func (s *IntegrationTestSuite) createBankMsg(val *network.Validator, toAddr sdk.
 	return clitestutil.MsgSendExec(val.ClientCtx, val.Address, toAddr, amount, flags...)
 }
 
-func (s *IntegrationTestSuite) getBalances(clientCtx client.Context, addr sdk.AccAddress, denom string) math.Int {
+func (s *E2ETestSuite) getBalances(clientCtx client.Context, addr sdk.AccAddress, denom string) math.Int {
 	resp, err := clitestutil.QueryBalancesExec(clientCtx, addr)
 	s.Require().NoError(err)
 
@@ -2035,4 +1962,15 @@ func (s *IntegrationTestSuite) getBalances(clientCtx client.Context, addr sdk.Ac
 	s.Require().NoError(err)
 	startTokens := balRes.Balances.AmountOf(denom)
 	return startTokens
+}
+
+func (s *E2ETestSuite) deepContains(events []abci.Event, value string) bool {
+	for _, e := range events {
+		for _, attr := range e.Attributes {
+			if strings.Contains(attr.Value, value) {
+				return true
+			}
+		}
+	}
+	return false
 }

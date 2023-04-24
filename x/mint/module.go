@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
 
 	modulev1 "cosmossdk.io/api/cosmos/mint/module/v1"
 	"cosmossdk.io/core/appmodule"
 
 	"cosmossdk.io/depinject"
 
+	store "cosmossdk.io/store/types"
+
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
-	store "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
@@ -34,7 +35,6 @@ import (
 const ConsensusVersion = 2
 
 var (
-	_ module.BeginBlockAppModule = AppModule{}
 	_ module.AppModuleBasic      = AppModuleBasic{}
 	_ module.AppModuleSimulation = AppModule{}
 )
@@ -129,7 +129,10 @@ func NewAppModule(
 	}
 }
 
-var _ appmodule.AppModule = AppModule{}
+var (
+	_ appmodule.AppModule       = AppModule{}
+	_ appmodule.HasBeginBlocker = AppModule{}
+)
 
 // IsOnePerModuleType implements the depinject.OnePerModuleType interface.
 func (am AppModule) IsOnePerModuleType() {}
@@ -141,9 +144,6 @@ func (am AppModule) IsAppModule() {}
 func (AppModule) Name() string {
 	return types.ModuleName
 }
-
-// RegisterInvariants registers the mint module invariants.
-func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 // RegisterServices registers a gRPC query service to respond to the
 // module-specific gRPC queries.
@@ -179,8 +179,9 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 func (AppModule) ConsensusVersion() uint64 { return ConsensusVersion }
 
 // BeginBlock returns the begin blocker for the mint module.
-func (am AppModule) BeginBlock(ctx sdk.Context, _ abci.RequestBeginBlock) {
-	BeginBlocker(ctx, am.keeper, am.inflationCalculator)
+func (am AppModule) BeginBlock(ctx context.Context) error {
+	c := sdk.UnwrapSDKContext(ctx)
+	return BeginBlocker(c, am.keeper, am.inflationCalculator)
 }
 
 // AppModuleSimulation functions
@@ -190,13 +191,13 @@ func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
 	simulation.RandomizedGenState(simState)
 }
 
-// ProposalContents doesn't return any content functions for governance proposals.
-func (AppModule) ProposalContents(simState module.SimulationState) []simtypes.WeightedProposalContent {
-	return nil
+// ProposalMsgs returns msgs used for governance proposals for simulations.
+func (AppModule) ProposalMsgs(simState module.SimulationState) []simtypes.WeightedProposalMsg {
+	return simulation.ProposalMsgs()
 }
 
 // RegisterStoreDecoder registers a decoder for mint module's types.
-func (am AppModule) RegisterStoreDecoder(sdr sdk.StoreDecoderRegistry) {
+func (am AppModule) RegisterStoreDecoder(sdr simtypes.StoreDecoderRegistry) {
 	sdr[types.StoreKey] = simulation.NewDecodeStore(am.cdc)
 }
 
@@ -215,7 +216,7 @@ func init() {
 	)
 }
 
-type MintInputs struct {
+type ModuleInputs struct {
 	depinject.In
 
 	ModuleKey              depinject.OwnModuleKey
@@ -232,14 +233,14 @@ type MintInputs struct {
 	StakingKeeper types.StakingKeeper
 }
 
-type MintOutputs struct {
+type ModuleOutputs struct {
 	depinject.Out
 
 	MintKeeper keeper.Keeper
 	Module     appmodule.AppModule
 }
 
-func ProvideModule(in MintInputs) MintOutputs {
+func ProvideModule(in ModuleInputs) ModuleOutputs {
 	feeCollectorName := in.Config.FeeCollectorName
 	if feeCollectorName == "" {
 		feeCollectorName = authtypes.FeeCollectorName
@@ -264,5 +265,5 @@ func ProvideModule(in MintInputs) MintOutputs {
 	// when no inflation calculation function is provided it will use the default types.DefaultInflationCalculationFn
 	m := NewAppModule(in.Cdc, k, in.AccountKeeper, in.InflationCalculationFn, in.LegacySubspace)
 
-	return MintOutputs{MintKeeper: k, Module: m}
+	return ModuleOutputs{MintKeeper: k, Module: m}
 }

@@ -1,46 +1,48 @@
 package distribution
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
 
 	"cosmossdk.io/math"
+	"cosmossdk.io/simapp"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/codec/address"
+	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
 	"github.com/cosmos/cosmos-sdk/testutil/network"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/distribution/client/cli"
-	distrclitestutil "github.com/cosmos/cosmos-sdk/x/distribution/client/testutil"
-	"github.com/cosmos/cosmos-sdk/x/distribution/testutil"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 )
 
-type IntegrationTestSuite struct {
+type E2ETestSuite struct {
 	suite.Suite
 
 	cfg     network.Config
 	network *network.Network
 }
 
-func NewIntegrationTestSuite(cfg network.Config) *IntegrationTestSuite {
-	return &IntegrationTestSuite{cfg: cfg}
+func NewE2ETestSuite(cfg network.Config) *E2ETestSuite {
+	return &E2ETestSuite{cfg: cfg}
 }
 
-// SetupSuite creates a new network for _each_ integration test. We create a new
+// SetupSuite creates a new network for _each_ e2e test. We create a new
 // network for each test because there are some state modifications that are
 // needed to be made in order to make useful queries. However, we don't want
 // these state changes to be present in other tests.
-func (s *IntegrationTestSuite) SetupSuite() {
-	s.T().Log("setting up integration test suite")
+func (s *E2ETestSuite) SetupSuite() {
+	s.T().Log("setting up e2e test suite")
 
-	cfg, err := network.DefaultConfigWithAppConfig(testutil.AppConfig)
-	s.Require().NoError(err)
+	cfg := network.DefaultConfig(simapp.NewTestNetworkFixture)
 	cfg.NumValidators = 1
 	s.cfg = cfg
 
@@ -65,12 +67,12 @@ func (s *IntegrationTestSuite) SetupSuite() {
 }
 
 // TearDownSuite cleans up the curret test network after _each_ test.
-func (s *IntegrationTestSuite) TearDownSuite() {
-	s.T().Log("tearing down integration test suite1")
+func (s *E2ETestSuite) TearDownSuite() {
+	s.T().Log("tearing down e2e test suite1")
 	s.network.Cleanup()
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryParams() {
+func (s *E2ETestSuite) TestGetCmdQueryParams() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -81,13 +83,13 @@ func (s *IntegrationTestSuite) TestGetCmdQueryParams() {
 		{
 			"json output",
 			[]string{fmt.Sprintf("--%s=json", flags.FlagOutput)},
-			`{"community_tax":"0.020000000000000000","base_proposer_reward":"0.010000000000000000","bonus_proposer_reward":"0.040000000000000000","withdraw_addr_enabled":true}`,
+			`{"community_tax":"0.020000000000000000","base_proposer_reward":"0.000000000000000000","bonus_proposer_reward":"0.000000000000000000","withdraw_addr_enabled":true}`,
 		},
 		{
 			"text output",
 			[]string{fmt.Sprintf("--%s=text", flags.FlagOutput)},
-			`base_proposer_reward: "0.010000000000000000"
-bonus_proposer_reward: "0.040000000000000000"
+			`base_proposer_reward: "0.000000000000000000"
+bonus_proposer_reward: "0.000000000000000000"
 community_tax: "0.020000000000000000"
 withdraw_addr_enabled: true`,
 		},
@@ -107,7 +109,7 @@ withdraw_addr_enabled: true`,
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryValidatorDistributionInfo() {
+func (s *E2ETestSuite) TestGetCmdQueryValidatorDistributionInfo() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -149,7 +151,7 @@ func (s *IntegrationTestSuite) TestGetCmdQueryValidatorDistributionInfo() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryValidatorOutstandingRewards() {
+func (s *E2ETestSuite) TestGetCmdQueryValidatorOutstandingRewards() {
 	val := s.network.Validators[0]
 
 	_, err := s.network.WaitForHeight(4)
@@ -212,7 +214,7 @@ func (s *IntegrationTestSuite) TestGetCmdQueryValidatorOutstandingRewards() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryValidatorCommission() {
+func (s *E2ETestSuite) TestGetCmdQueryValidatorCommission() {
 	val := s.network.Validators[0]
 
 	_, err := s.network.WaitForHeight(4)
@@ -275,7 +277,7 @@ func (s *IntegrationTestSuite) TestGetCmdQueryValidatorCommission() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryValidatorSlashes() {
+func (s *E2ETestSuite) TestGetCmdQueryValidatorSlashes() {
 	val := s.network.Validators[0]
 
 	_, err := s.network.WaitForHeight(4)
@@ -354,7 +356,7 @@ func (s *IntegrationTestSuite) TestGetCmdQueryValidatorSlashes() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryDelegatorRewards() {
+func (s *E2ETestSuite) TestGetCmdQueryDelegatorRewards() {
 	val := s.network.Validators[0]
 	addr := val.Address
 	valAddr := sdk.ValAddress(addr)
@@ -441,7 +443,7 @@ total:
 		tc := tc
 
 		s.Run(tc.name, func() {
-			cmd := cli.GetCmdQueryDelegatorRewards()
+			cmd := cli.GetCmdQueryDelegatorRewards(address.NewBech32Codec("cosmos"))
 			clientCtx := val.ClientCtx
 
 			out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
@@ -455,7 +457,7 @@ total:
 	}
 }
 
-func (s *IntegrationTestSuite) TestGetCmdQueryCommunityPool() {
+func (s *E2ETestSuite) TestGetCmdQueryCommunityPool() {
 	val := s.network.Validators[0]
 
 	_, err := s.network.WaitForHeight(4)
@@ -494,7 +496,7 @@ func (s *IntegrationTestSuite) TestGetCmdQueryCommunityPool() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestNewWithdrawRewardsCmd() {
+func (s *E2ETestSuite) TestNewWithdrawRewardsCmd() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -556,13 +558,22 @@ func (s *IntegrationTestSuite) TestNewWithdrawRewardsCmd() {
 		s.Run(tc.name, func() {
 			clientCtx := val.ClientCtx
 
+			args := append([]string{tc.valAddr.String()}, tc.args...)
+
 			_, _ = s.network.WaitForHeightWithTimeout(10, time.Minute)
-			bz, err := distrclitestutil.MsgWithdrawDelegatorRewardExec(clientCtx, tc.valAddr, tc.args...)
+
+			ctx := svrcmd.CreateExecuteContext(context.Background())
+			cmd := cli.NewWithdrawRewardsCmd()
+			cmd.SetContext(ctx)
+			cmd.SetArgs(args)
+			s.Require().NoError(client.SetCmdClientContextHandler(clientCtx, cmd))
+
+			out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, args)
 			if tc.expectErr {
 				s.Require().Error(err)
 			} else {
 				s.Require().NoError(err)
-				s.Require().NoError(clientCtx.Codec.UnmarshalJSON(bz, tc.respType), string(bz))
+				s.Require().NoError(clientCtx.Codec.UnmarshalJSON(out.Bytes(), tc.respType), out.String())
 				s.Require().NoError(s.network.WaitForNextBlock())
 
 				txResp, err := clitestutil.GetTxResponse(s.network, clientCtx, tc.respType.(*sdk.TxResponse).TxHash)
@@ -599,7 +610,7 @@ func (s *IntegrationTestSuite) TestNewWithdrawRewardsCmd() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestNewWithdrawAllRewardsCmd() {
+func (s *E2ETestSuite) TestNewWithdrawAllRewardsCmd() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -687,7 +698,7 @@ func (s *IntegrationTestSuite) TestNewWithdrawAllRewardsCmd() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestNewSetWithdrawAddrCmd() {
+func (s *E2ETestSuite) TestNewSetWithdrawAddrCmd() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {
@@ -725,7 +736,7 @@ func (s *IntegrationTestSuite) TestNewSetWithdrawAddrCmd() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			cmd := cli.NewSetWithdrawAddrCmd()
+			cmd := cli.NewSetWithdrawAddrCmd(address.NewBech32Codec("cosmos"))
 			clientCtx := val.ClientCtx
 
 			out, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
@@ -742,7 +753,7 @@ func (s *IntegrationTestSuite) TestNewSetWithdrawAddrCmd() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestNewFundCommunityPoolCmd() {
+func (s *E2ETestSuite) TestNewFundCommunityPoolCmd() {
 	val := s.network.Validators[0]
 
 	testCases := []struct {

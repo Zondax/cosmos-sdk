@@ -6,19 +6,19 @@ import (
 	"fmt"
 	"time"
 
-	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
-	"golang.org/x/exp/maps"
-
 	modulev1 "cosmossdk.io/api/cosmos/bank/module/v1"
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
+	abci "github.com/cometbft/cometbft/abci/types"
+	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/spf13/cobra"
+
+	store "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	store "github.com/cosmos/cosmos-sdk/store/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
@@ -184,18 +184,18 @@ func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
 	simulation.RandomizedGenState(simState)
 }
 
-// ProposalContents doesn't return any content functions for governance proposals.
-func (AppModule) ProposalContents(_ module.SimulationState) []simtypes.WeightedProposalContent {
-	return nil
+// ProposalMsgs returns msgs used for governance proposals for simulations.
+func (AppModule) ProposalMsgs(simState module.SimulationState) []simtypes.WeightedProposalMsg {
+	return simulation.ProposalMsgs()
 }
 
 // RegisterStoreDecoder registers a decoder for supply module's types
-func (am AppModule) RegisterStoreDecoder(_ sdk.StoreDecoderRegistry) {}
+func (am AppModule) RegisterStoreDecoder(_ simtypes.StoreDecoderRegistry) {}
 
 // WeightedOperations returns the all the gov module operations with their respective weights.
 func (am AppModule) WeightedOperations(simState module.SimulationState) []simtypes.WeightedOperation {
 	return simulation.WeightedOperations(
-		simState.AppParams, simState.Cdc, am.accountKeeper, am.keeper,
+		simState.AppParams, simState.Cdc, simState.TxConfig, am.accountKeeper, am.keeper,
 	)
 }
 
@@ -207,12 +207,13 @@ func init() {
 	)
 }
 
-type BankInputs struct {
+type ModuleInputs struct {
 	depinject.In
 
 	Config *modulev1.Module
 	Cdc    codec.Codec
 	Key    *store.KVStoreKey
+	Logger log.Logger
 
 	AccountKeeper types.AccountKeeper
 
@@ -220,14 +221,14 @@ type BankInputs struct {
 	LegacySubspace exported.Subspace `optional:"true"`
 }
 
-type BankOutputs struct {
+type ModuleOutputs struct {
 	depinject.Out
 
 	BankKeeper keeper.BaseKeeper
 	Module     appmodule.AppModule
 }
 
-func ProvideModule(in BankInputs) BankOutputs {
+func ProvideModule(in ModuleInputs) ModuleOutputs {
 	// Configure blocked module accounts.
 	//
 	// Default behavior for blockedAddresses is to regard any module mentioned in
@@ -238,8 +239,7 @@ func ProvideModule(in BankInputs) BankOutputs {
 			blockedAddresses[authtypes.NewModuleAddress(moduleName).String()] = true
 		}
 	} else {
-		permissions := maps.Values(in.AccountKeeper.GetModulePermissions())
-		for _, permission := range permissions {
+		for _, permission := range in.AccountKeeper.GetModulePermissions() {
 			blockedAddresses[permission.GetAddress().String()] = true
 		}
 	}
@@ -256,8 +256,9 @@ func ProvideModule(in BankInputs) BankOutputs {
 		in.AccountKeeper,
 		blockedAddresses,
 		authority.String(),
+		in.Logger,
 	)
 	m := NewAppModule(in.Cdc, bankKeeper, in.AccountKeeper, in.LegacySubspace)
 
-	return BankOutputs{BankKeeper: bankKeeper, Module: m}
+	return ModuleOutputs{BankKeeper: bankKeeper, Module: m}
 }

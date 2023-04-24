@@ -5,12 +5,13 @@ package errors
 
 import (
 	"fmt"
+	"net/http"
 
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/coinbase/rosetta-sdk-go/types"
-	tmtypes "github.com/tendermint/tendermint/rpc/jsonrpc/types"
+	cmttypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 )
 
 // ListErrors lists all the registered errors
@@ -71,19 +72,19 @@ func ToRosetta(err error) *types.Error {
 	// if it's null or not known
 	rosErr, ok := err.(*Error)
 	if rosErr == nil || !ok {
-		tmErr, ok := err.(*tmtypes.RPCError)
+		tmErr, ok := err.(*cmttypes.RPCError)
 		if tmErr != nil && ok {
-			return fromTendermintToRosettaError(tmErr).rosErr
+			return fromCometToRosettaError(tmErr).rosErr
 		}
 		return ToRosetta(WrapError(ErrUnknown, ErrUnknown.Error()))
 	}
 	return rosErr.rosErr
 }
 
-// fromTendermintToRosettaError converts a tendermint jsonrpc error to rosetta error
-func fromTendermintToRosettaError(err *tmtypes.RPCError) *Error {
+// fromCometToRosettaError converts a CometBFT jsonrpc error to rosetta error
+func fromCometToRosettaError(err *cmttypes.RPCError) *Error {
 	return &Error{rosErr: &types.Error{
-		Code:    int32(err.Code),
+		Code:    http.StatusInternalServerError,
 		Message: err.Message,
 		Details: map[string]interface{}{
 			"info": err.Data,
@@ -132,7 +133,7 @@ var (
 	ErrOffline = RegisterError(1, "cannot query endpoint in offline mode", false, "returned when querying an online endpoint in offline mode")
 	// ErrNetworkNotSupported is returned when there is an attempt to query a network which is not supported
 	ErrNetworkNotSupported = RegisterError(2, "network is not supported", false, "returned when querying a non supported network")
-	// ErrCodec is returned when there's an error while marshalling or unmarshalling data
+	// ErrCodec is returned when there's an error while marshaling or unmarshalling data
 	ErrCodec = RegisterError(3, "encode/decode error", true, "returned when there are errors encoding or decoding information to and from the node")
 	// ErrInvalidOperation is returned when the operation supplied to rosetta is not a valid one
 	ErrInvalidOperation = RegisterError(4, "invalid operation", false, "returned when the operation is not valid")

@@ -5,9 +5,12 @@ import (
 
 	"github.com/cosmos/gogoproto/proto"
 
+	errorsmod "cosmossdk.io/errors"
+
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
+// nolint:revive // XXX is reqired for proto compatibility
 type Any struct {
 	// A URL/resource name that uniquely identifies the type of the serialized
 	// protocol buffer message. This string must contain at least
@@ -57,7 +60,7 @@ type Any struct {
 // unmarshaling
 func NewAnyWithValue(v proto.Message) (*Any, error) {
 	if v == nil {
-		return nil, sdkerrors.Wrap(sdkerrors.ErrPackAny, "Expecting non nil value to create a new Any")
+		return nil, errorsmod.Wrap(sdkerrors.ErrPackAny, "Expecting non nil value to create a new Any")
 	}
 
 	bz, err := proto.Marshal(v)

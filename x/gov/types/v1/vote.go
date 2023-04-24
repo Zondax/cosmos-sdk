@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"cosmossdk.io/math"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -17,8 +18,6 @@ const (
 )
 
 // NewVote creates a new Vote instance
-//
-//nolint:interfacer
 func NewVote(proposalID uint64, voter sdk.AccAddress, options WeightedVoteOptions, metadata string) Vote {
 	return Vote{ProposalId: proposalID, Voter: voter.String(), Options: options, Metadata: metadata}
 }
@@ -46,6 +45,7 @@ func (v Votes) Equal(other Votes) bool {
 	return true
 }
 
+// String implements stringer interface
 func (v Votes) String() string {
 	if len(v) == 0 {
 		return "[]"
@@ -63,7 +63,7 @@ func NewWeightedVoteOption(option VoteOption, weight sdk.Dec) *WeightedVoteOptio
 
 // IsValid returns true if the sub vote is valid and false otherwise.
 func (w *WeightedVoteOption) IsValid() bool {
-	weight, err := sdk.NewDecFromStr(w.Weight)
+	weight, err := math.LegacyNewDecFromStr(w.Weight)
 	if err != nil {
 		return false
 	}
@@ -123,7 +123,7 @@ func WeightedVoteOptionsFromString(str string) (WeightedVoteOptions, error) {
 		if len(fields) < 2 {
 			return options, fmt.Errorf("weight field does not exist for %s option", fields[0])
 		}
-		weight, err := sdk.NewDecFromStr(fields[1])
+		weight, err := math.LegacyNewDecFromStr(fields[1])
 		if err != nil {
 			return options, err
 		}

@@ -120,8 +120,8 @@ const config = {
                 href: "https://hub.cosmos.network",
               },
               {
-                label: "Tendermint Core",
-                href: "https://docs.tendermint.com",
+                label: "CometBFT",
+                href: "https://docs.cometbft.com",
               },
               {
                 label: "IBC Go",
@@ -181,7 +181,7 @@ const config = {
       },
       algolia: {
         appId: "QLS2QSP47E",
-        apiKey: "067b84458bfa80c295e1d4f12c461911",
+        apiKey: "4d9feeb481e3cfef8f91bbc63e090042",
         indexName: "cosmos_network",
         contextualSearch: false,
       },
@@ -230,7 +230,7 @@ const config = {
           },
           {
             from: "/main/modules/auth/05_vesting",
-            to: "/main/modules/vesting",
+            to: "/main/modules/auth/vesting",
           },
           {
             from: [
@@ -251,13 +251,6 @@ const config = {
               "/main/modules/bank/06_client",
             ],
             to: "/main/modules/bank",
-          },
-          {
-            from: [
-              "/main/modules/capability/01_concepts",
-              "/main/modules/capability/02_state",
-            ],
-            to: "/main/modules/capability",
           },
           {
             from: [
@@ -393,8 +386,28 @@ const config = {
             to: "/main/modules/upgrade/",
           },
           {
+            from: ["/main/modules/capability", "/main/ecosystem"],
+            to: "/main/modules",
+          },
+          {
+            from: ["/main/spec/circuit-breaker"],
+            to: "/main/modules/circuit",
+          },
+          {
+            from: ["/main/spec/reserve-pool"],
+            to: "/main/modules/distribution",
+          },
+          {
             from: ["/main/run-node/cosmovisor"],
             to: "/main/tooling/cosmovisor",
+          },
+          {
+            from: ["/main/migrations/pre-upgrade"],
+            to: "/main/building-apps/app-upgrade",
+          },
+          {
+            from: ["/main/tooling/depinject"],
+            to: "/main/packages/depinject",
           },
         ],
       },

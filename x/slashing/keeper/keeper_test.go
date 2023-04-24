@@ -6,8 +6,10 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	tmtime "github.com/tendermint/tendermint/types/time"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttime "github.com/cometbft/cometbft/types/time"
+
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	sdktestutil "github.com/cosmos/cosmos-sdk/testutil"
@@ -19,6 +21,7 @@ import (
 	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	slashingtestutil "github.com/cosmos/cosmos-sdk/x/slashing/testutil"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 var consAddr = sdk.ConsAddress(sdk.AccAddress([]byte("addr1_______________")))
@@ -34,9 +37,9 @@ type KeeperTestSuite struct {
 }
 
 func (s *KeeperTestSuite) SetupTest() {
-	key := sdk.NewKVStoreKey(slashingtypes.StoreKey)
-	testCtx := sdktestutil.DefaultContextWithDB(s.T(), key, sdk.NewTransientStoreKey("transient_test"))
-	ctx := testCtx.Ctx.WithBlockHeader(tmproto.Header{Time: tmtime.Now()})
+	key := storetypes.NewKVStoreKey(slashingtypes.StoreKey)
+	testCtx := sdktestutil.DefaultContextWithDB(s.T(), key, storetypes.NewTransientStoreKey("transient_test"))
+	ctx := testCtx.Ctx.WithBlockHeader(cmtproto.Header{Time: cmttime.Now()})
 	encCfg := moduletestutil.MakeTestEncodingConfig()
 
 	// gomock initializations
@@ -72,6 +75,49 @@ func (s *KeeperTestSuite) TestPubkey() {
 	expectedPubKey, err := keeper.GetPubkey(ctx, addr.Bytes())
 	require.NoError(err)
 	require.Equal(pubKey, expectedPubKey)
+}
+
+func (s *KeeperTestSuite) TestJailAndSlash() {
+	s.stakingKeeper.EXPECT().SlashWithInfractionReason(s.ctx,
+		consAddr,
+		s.ctx.BlockHeight(),
+		sdk.TokensToConsensusPower(sdk.NewInt(1), sdk.DefaultPowerReduction),
+		s.slashingKeeper.SlashFractionDoubleSign(s.ctx),
+		stakingtypes.Infraction_INFRACTION_UNSPECIFIED,
+	).Return(sdk.NewInt(0))
+
+	s.slashingKeeper.Slash(
+		s.ctx,
+		consAddr,
+		s.slashingKeeper.SlashFractionDoubleSign(s.ctx),
+		sdk.TokensToConsensusPower(sdk.NewInt(1), sdk.DefaultPowerReduction),
+		s.ctx.BlockHeight(),
+	)
+
+	s.stakingKeeper.EXPECT().Jail(s.ctx, consAddr).Return()
+	s.slashingKeeper.Jail(s.ctx, consAddr)
+}
+
+func (s *KeeperTestSuite) TestJailAndSlashWithInfractionReason() {
+	s.stakingKeeper.EXPECT().SlashWithInfractionReason(s.ctx,
+		consAddr,
+		s.ctx.BlockHeight(),
+		sdk.TokensToConsensusPower(sdk.NewInt(1), sdk.DefaultPowerReduction),
+		s.slashingKeeper.SlashFractionDoubleSign(s.ctx),
+		stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
+	).Return(sdk.NewInt(0))
+
+	s.slashingKeeper.SlashWithInfractionReason(
+		s.ctx,
+		consAddr,
+		s.slashingKeeper.SlashFractionDoubleSign(s.ctx),
+		sdk.TokensToConsensusPower(sdk.NewInt(1), sdk.DefaultPowerReduction),
+		s.ctx.BlockHeight(),
+		stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
+	)
+
+	s.stakingKeeper.EXPECT().Jail(s.ctx, consAddr).Return()
+	s.slashingKeeper.Jail(s.ctx, consAddr)
 }
 
 func TestKeeperTestSuite(t *testing.T) {

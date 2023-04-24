@@ -45,9 +45,9 @@ be a matter of minutes and not even require them to be awake at that time.
 Setup an upgrade Keeper for the app and then define a BeginBlocker that calls the upgrade
 keeper's BeginBlocker method:
 
-	func (app *myApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
+	func (app *myApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) (abci.ResponseBeginBlock, error) {
 		app.upgradeKeeper.BeginBlocker(ctx, req)
-		return abci.ResponseBeginBlock{}
+		return abci.ResponseBeginBlock{}, nil
 	}
 
 The app must then integrate the upgrade keeper with its governance module as appropriate. The governance module
@@ -117,7 +117,7 @@ specified here https://github.com/cosmos/cosmos-sdk/tree/main/cosmovisor/README.
 This will allow a properly configured cosmsod daemon to auto-download new binaries and auto-upgrade.
 As noted there, this is intended more for full nodes than validators.
 
-# Cancelling Upgrades
+# Canceling Upgrades
 
 There are two ways to cancel a planned upgrade - with on-chain governance or off-chain social consensus.
 For the first one, there is a CancelSoftwareUpgrade proposal type, which can be voted on and will

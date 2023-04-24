@@ -1,13 +1,12 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/gogoproto/proto"
-	abci "github.com/tendermint/tendermint/abci/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -36,7 +35,7 @@ func (s *CLITestSuite) TestGetBalancesCmd() {
 			"valid query",
 			func() client.Context {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QueryAllBalancesResponse{})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -54,7 +53,7 @@ func (s *CLITestSuite) TestGetBalancesCmd() {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QueryBalanceResponse{
 					Balance: &sdk.Coin{},
 				})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -81,7 +80,7 @@ func (s *CLITestSuite) TestGetBalancesCmd() {
 		{
 			"invalid denom",
 			func() client.Context {
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Code: 1,
 				})
 				return s.baseCtx.WithClient(c)
@@ -99,21 +98,97 @@ func (s *CLITestSuite) TestGetBalancesCmd() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			var outBuf bytes.Buffer
-
-			clientCtx := tc.ctxGen().WithOutput(&outBuf)
 			ctx := svrcmd.CreateExecuteContext(context.Background())
 
 			cmd.SetContext(ctx)
 			cmd.SetArgs(tc.args)
 
-			s.Require().NoError(client.SetCmdClientContextHandler(clientCtx, cmd))
+			s.Require().NoError(client.SetCmdClientContextHandler(tc.ctxGen(), cmd))
 
-			err := cmd.Execute()
+			out, err := clitestutil.ExecTestCLICmd(tc.ctxGen(), cmd, tc.args)
 			if tc.expectErr {
 				s.Require().Error(err)
 			} else {
-				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(outBuf.Bytes(), tc.expectResult))
+				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(out.Bytes(), tc.expectResult))
+				s.Require().NoError(err)
+			}
+		})
+	}
+}
+
+func (s *CLITestSuite) TestGetSpendableBalancesCmd() {
+	accounts := testutil.CreateKeyringAccounts(s.T(), s.kr, 1)
+
+	cmd := cli.GetSpendableBalancesCmd()
+	cmd.SetOutput(io.Discard)
+
+	testCases := []struct {
+		name         string
+		ctxGen       func() client.Context
+		args         []string
+		expectResult proto.Message
+		expectErr    bool
+	}{
+		{
+			"valid query",
+			func() client.Context {
+				bz, _ := s.encCfg.Codec.Marshal(&types.QuerySpendableBalancesResponse{})
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
+					Value: bz,
+				})
+				return s.baseCtx.WithClient(c)
+			},
+			[]string{
+				accounts[0].Address.String(),
+				fmt.Sprintf("--%s=json", flags.FlagOutput),
+			},
+			&types.QuerySpendableBalancesResponse{},
+			false,
+		},
+		{
+			"valid query with denom flag",
+			func() client.Context {
+				bz, _ := s.encCfg.Codec.Marshal(&types.QuerySpendableBalanceByDenomRequest{})
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
+					Value: bz,
+				})
+				return s.baseCtx.WithClient(c)
+			},
+			[]string{
+				accounts[0].Address.String(),
+				fmt.Sprintf("--%s=json", flags.FlagOutput),
+				fmt.Sprintf("--%s=photon", cli.FlagDenom),
+			},
+			&types.QuerySpendableBalanceByDenomResponse{},
+			false,
+		},
+		{
+			"invalid Address",
+			func() client.Context {
+				return s.baseCtx
+			},
+			[]string{
+				"foo",
+			},
+			nil,
+			true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		s.Run(tc.name, func() {
+			ctx := svrcmd.CreateExecuteContext(context.Background())
+			cmd.SetContext(ctx)
+			cmd.SetArgs(tc.args)
+			s.Require().NoError(client.SetCmdClientContextHandler(tc.ctxGen(), cmd))
+
+			out, err := clitestutil.ExecTestCLICmd(tc.ctxGen(), cmd, tc.args)
+			if tc.expectErr {
+				s.Require().Error(err)
+			} else {
+				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(out.Bytes(), tc.expectResult))
 				s.Require().NoError(err)
 			}
 		})
@@ -135,7 +210,7 @@ func (s *CLITestSuite) TestGetCmdDenomsMetadata() {
 			"valid query",
 			func() client.Context {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QueryDenomsMetadataResponse{})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -150,7 +225,7 @@ func (s *CLITestSuite) TestGetCmdDenomsMetadata() {
 			"valid query with denom",
 			func() client.Context {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QueryDenomMetadataResponse{})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -165,7 +240,7 @@ func (s *CLITestSuite) TestGetCmdDenomsMetadata() {
 		{
 			"invalid query with denom",
 			func() client.Context {
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Code: 1,
 				})
 				return s.baseCtx.WithClient(c)
@@ -182,21 +257,18 @@ func (s *CLITestSuite) TestGetCmdDenomsMetadata() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			var outBuf bytes.Buffer
-
-			clientCtx := tc.ctxGen().WithOutput(&outBuf)
 			ctx := svrcmd.CreateExecuteContext(context.Background())
 
 			cmd.SetContext(ctx)
 			cmd.SetArgs(tc.args)
 
-			s.Require().NoError(client.SetCmdClientContextHandler(clientCtx, cmd))
+			s.Require().NoError(client.SetCmdClientContextHandler(tc.ctxGen(), cmd))
 
-			err := cmd.Execute()
+			out, err := clitestutil.ExecTestCLICmd(tc.ctxGen(), cmd, tc.args)
 			if tc.expectErr {
 				s.Require().Error(err)
 			} else {
-				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(outBuf.Bytes(), tc.expectResult))
+				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(out.Bytes(), tc.expectResult))
 				s.Require().NoError(err)
 			}
 		})
@@ -218,7 +290,7 @@ func (s *CLITestSuite) TestGetCmdQueryTotalSupply() {
 			"valid query",
 			func() client.Context {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QueryTotalSupplyResponse{})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -235,7 +307,7 @@ func (s *CLITestSuite) TestGetCmdQueryTotalSupply() {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QuerySupplyOfResponse{
 					Amount: sdk.Coin{},
 				})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -250,7 +322,7 @@ func (s *CLITestSuite) TestGetCmdQueryTotalSupply() {
 		{
 			"invalid query with denom",
 			func() client.Context {
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Code: 1,
 				})
 				return s.baseCtx.WithClient(c)
@@ -268,21 +340,16 @@ func (s *CLITestSuite) TestGetCmdQueryTotalSupply() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			var outBuf bytes.Buffer
-
-			clientCtx := tc.ctxGen().WithOutput(&outBuf)
 			ctx := svrcmd.CreateExecuteContext(context.Background())
-
 			cmd.SetContext(ctx)
 			cmd.SetArgs(tc.args)
+			s.Require().NoError(client.SetCmdClientContextHandler(tc.ctxGen(), cmd))
 
-			s.Require().NoError(client.SetCmdClientContextHandler(clientCtx, cmd))
-
-			err := cmd.Execute()
+			out, err := clitestutil.ExecTestCLICmd(tc.ctxGen(), cmd, tc.args)
 			if tc.expectErr {
 				s.Require().Error(err)
 			} else {
-				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(outBuf.Bytes(), tc.expectResult))
+				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(out.Bytes(), tc.expectResult))
 				s.Require().NoError(err)
 			}
 		})
@@ -306,7 +373,7 @@ func (s *CLITestSuite) TestGetCmdQuerySendEnabled() {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QuerySendEnabledResponse{
 					SendEnabled: []*types.SendEnabled{},
 				})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -323,7 +390,7 @@ func (s *CLITestSuite) TestGetCmdQuerySendEnabled() {
 				bz, _ := s.encCfg.Codec.Marshal(&types.QuerySendEnabledResponse{
 					SendEnabled: []*types.SendEnabled{},
 				})
-				c := clitestutil.NewMockTendermintRPC(abci.ResponseQuery{
+				c := clitestutil.NewMockCometRPC(abci.ResponseQuery{
 					Value: bz,
 				})
 				return s.baseCtx.WithClient(c)
@@ -342,21 +409,18 @@ func (s *CLITestSuite) TestGetCmdQuerySendEnabled() {
 		tc := tc
 
 		s.Run(tc.name, func() {
-			var outBuf bytes.Buffer
-
-			clientCtx := tc.ctxGen().WithOutput(&outBuf)
 			ctx := svrcmd.CreateExecuteContext(context.Background())
 
 			cmd.SetContext(ctx)
 			cmd.SetArgs(tc.args)
 
-			s.Require().NoError(client.SetCmdClientContextHandler(clientCtx, cmd))
+			s.Require().NoError(client.SetCmdClientContextHandler(tc.ctxGen(), cmd))
 
-			err := cmd.Execute()
+			out, err := clitestutil.ExecTestCLICmd(tc.ctxGen(), cmd, tc.args)
 			if tc.expectErr {
 				s.Require().Error(err)
 			} else {
-				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(outBuf.Bytes(), tc.expectResult))
+				s.Require().NoError(s.encCfg.Codec.UnmarshalJSON(out.Bytes(), tc.expectResult))
 				s.Require().NoError(err)
 			}
 		})
