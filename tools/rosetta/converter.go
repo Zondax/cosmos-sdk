@@ -2,11 +2,8 @@ package rosetta
 
 import (
 	"bytes"
-<<<<<<< HEAD
 	"context"
-=======
 	"encoding/base64"
->>>>>>> 9325bd2291... fix: decode base64
 	"encoding/json"
 	"fmt"
 	"reflect"
