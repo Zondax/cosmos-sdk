@@ -18,7 +18,7 @@ func main() {
 		cdc               = codec.NewProtoCodec(interfaceRegistry)
 	)
 
-	rosetta.RegisterInterfaces(cdc, interfaceRegistry)
+	rosetta.RegisterInterfaces(interfaceRegistry)
 
 	if err := rosettaCmd.RosettaCommand(interfaceRegistry, cdc).Execute(); err != nil {
 		logger.Error("failed to run rosetta", "error", err)
