@@ -10,6 +10,9 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 
 	ibcclienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
+	ibcLightClient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
+	//ibcLightClientTypes "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	//sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -21,6 +24,9 @@ func main() {
 	)
 
 	ibcclienttypes.RegisterInterfaces(interfaceRegistry)
+	ibcLightClient.RegisterInterfaces(interfaceRegistry)
+	interfaceRegistry.RegisterInterface("/ibc.lightclients.tendermint.v1.Header", (*exported.ClientMessage)(nil))
+	fmt.Println(interfaceRegistry.ListAllInterfaces())
 
 	if err := rosettaCmd.RosettaCommand(interfaceRegistry, cdc).Execute(); err != nil {
 		logger.Error("failed to run rosetta", "error", err)
