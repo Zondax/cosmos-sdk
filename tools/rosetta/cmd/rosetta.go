@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"plugin"
 
 	"github.com/spf13/cobra"
 
@@ -33,7 +35,7 @@ func RosettaCommand(ir codectypes.InterfaceRegistry, cdc codec.Codec) *cobra.Com
 				fmt.Printf("[Rosetta]- Error while loading the plugin: %s", err.Error())
 				return err
 			}
-
+			
 			rosettaSrv, err := rosetta.ServerFromConfig(conf)
 			if err != nil {
 				fmt.Printf("[Rosetta]- Error while creating server: %s", err.Error())
