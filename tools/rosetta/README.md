@@ -73,6 +73,8 @@ To use Rosetta standalone over any chain, it is possible to easily achieve it by
 
 Each plugin is a minimalist implementation of `InitZone` and `RegisterInterfaces` which allow Rosetta to parse chain specific data. There is an example for cosmos-hub chain under `plugins/default/` folder
 
+The plugin is selected through the cli `--blockchain` flag
+
 ## Extensions
 
 There are two ways in which you can customize and extend the implementation with your custom settings.
