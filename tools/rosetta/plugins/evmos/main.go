@@ -13,8 +13,11 @@ import (
 
 func InitZone() {
 	config := sdk.GetConfig()
-	prefix := "cosmos"
+
+	prefix := "evmos"
 	config.SetBech32PrefixForAccount(prefix, prefix+"pub")
+	config.SetBech32PrefixForValidator(prefix+"valoper", prefix+"valoperpub")
+	config.SetBech32PrefixForConsensusNode(prefix+"valcons", prefix+"valconspub")
 }
 
 func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
