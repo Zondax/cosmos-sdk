@@ -8,6 +8,7 @@ import (
 	ibcclienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 
 	//	"github.com/cosmos/ibc-go/v7/modules/core/exported"
+	ibcChannelClient "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcLightClient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -31,6 +32,7 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 
 	ibcclienttypes.RegisterInterfaces(registry)
 	ibcLightClient.RegisterInterfaces(registry)
+	ibcChannelClient.RegisterInterfaces(registry)
 	sdk.RegisterInterfaces(registry)
 	txtypes.RegisterInterfaces(registry)
 	cryptocodec.RegisterInterfaces(registry)

@@ -121,4 +121,7 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace cosmossdk.io/api => cosmossdk.io/api v0.3.1
+replace (
+	cosmossdk.io/api => cosmossdk.io/api v0.3.1
+	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
+)

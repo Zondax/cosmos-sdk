@@ -4,7 +4,8 @@ go 1.20
 
 require (
 	github.com/cosmos/cosmos-sdk v0.47.2
-	github.com/cosmos/ibc-go/v7 v7.0.0
+	github.com/cosmos/ibc-go/v7 v7.0.1
+//github.com/CosmWasm/wasmd v0.31.0
 )
 
 require (
@@ -114,4 +115,8 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace cosmossdk.io/api => cosmossdk.io/api v0.3.1
+replace (
+	// github.com/CosmWasm/wasmd => github.com/osmosis-labs/wasmd v0.31.0-osmo-v16
+	cosmossdk.io/api => cosmossdk.io/api v0.3.1
+	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
+)

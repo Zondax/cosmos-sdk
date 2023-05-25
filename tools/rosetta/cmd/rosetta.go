@@ -46,6 +46,13 @@ func RosettaCommand(ir codectypes.InterfaceRegistry, cdc codec.Codec) *cobra.Com
 			}
 			initZone.(func())()
 
+			registerInterfaces, err := plug.Lookup("RegisterInterfaces")
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			registerInterfaces.(func(codectypes.InterfaceRegistry))(ir)
+
 			rosettaSrv, err := rosetta.ServerFromConfig(conf)
 			if err != nil {
 				fmt.Printf("[Rosetta]- Error while creating server: %s", err.Error())
