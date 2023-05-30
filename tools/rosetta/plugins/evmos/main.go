@@ -10,6 +10,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	bankTypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+
+	evmosTypes "github.com/evmos/ethermint/x/evm/types"
 )
 
 func InitZone() {
@@ -28,4 +30,5 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	txtypes.RegisterInterfaces(registry)
 	cryptocodec.RegisterInterfaces(registry)
 	bankTypes.RegisterInterfaces(registry)
+	evmosTypes.RegisterInterfaces(registry)
 }
