@@ -34,6 +34,7 @@ func LoadPlugin(ir codectypes.InterfaceRegistry, blockchain string) (err error) 
 		fmt.Println("There was an error while registering interfaces...", err)
 		return err
 	}
+	
 	registerInterfaces.(func(codectypes.InterfaceRegistry))(ir)
 	return err
 }
