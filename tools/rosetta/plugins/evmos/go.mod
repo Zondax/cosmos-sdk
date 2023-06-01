@@ -133,17 +133,9 @@ require (
 
 //
 replace (
-	//		github.com/tendermint/tendermint/types/time => github.com/tendermint/tendermint/types/time v0.34.24
-	//	github.com/btcsuite/btcd/btce => github.com/btcsuite/btcd v0.23.3
 	github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.2
-	//	//	cosmossdk.io/api/cosmos/capability/module => cosmossdk.io/api/cosmos/capability/module v0.3.1
-	//	github.com/cosmos/cosmos-sdk/x/auth/codec => github.com/cosmos/cosmos-sdk/x/auth/codec v0.46.0
 	github.com/cosmos/cosmos-sdk => github.com/evmos/cosmos-sdk v0.46.11-alpha.ledger.7
-	//	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.46.2
 	github.com/cosmos/cosmos-sdk/simapp => cosmossdk.io/simapp v0.0.0-20230525153548-b6613f9163f8
-	//	github.com/cosmos/cosmos-sdk/testutil/sims => github.com/cosmos/cosmos-sdk/testutil/sims v0.46.11
-	//
-	//	github.com/cosmos/cosmos-sdk/testutil/testdata/testpb => github.com/cosmos/cosmos-sdk/testutil/testdata/testpb v0.46.11
 	github.com/cosmos/cosmos-sdk/types => github.com/cosmos/cosmos-sdk/types v0.47.2
 	github.com/cosmos/iavl => github.com/cosmos/iavl v0.19.6-0.20230519111437-94ab9b2ae595
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
