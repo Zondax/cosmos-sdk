@@ -12,7 +12,7 @@ func LoadPlugin(ir codectypes.InterfaceRegistry, blockchain string) (err error) 
 	pluginPathMain := fmt.Sprintf("./plugins/%s/main.so", blockchain)
 	if _, err := os.Stat(pluginPathMain); os.IsExist(err) {
 		fmt.Printf("Plugin file '%s' does not exist, loading default plugin 'cosmos-hub'.\n", pluginPathMain)
-		pluginPathMain = fmt.Sprintf("./plugins/%s/main.so", "default")
+		return err
 	}
 
 	// load module
