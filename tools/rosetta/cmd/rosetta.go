@@ -2,23 +2,17 @@ package cmd
 
 import (
 	"context"
-	autocliv1 "cosmossdk.io/api/cosmos/autocli/v1"
 	reflectionv1beta1 "cosmossdk.io/api/cosmos/base/reflection/v1beta1"
 	"crypto/tls"
 	"fmt"
+	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"io"
 	"os"
-	"strings"
-
-	"github.com/spf13/cobra"
 
 	"cosmossdk.io/tools/rosetta"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -168,7 +162,7 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 	}
 
 	if err = reflectClient.CloseSend(); err != nil {
-		//return nil, err
+		fmt.Println("[ERROR] on closing reflectClient", err.Error())
 	}
 
 	<-waitc
@@ -201,7 +195,6 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 	for _, descriptorProto := range fdMap {
 		fdSet.File = append(fdSet.File, descriptorProto)
 	}
-	fmt.Println("AQUI LLEGAMOS")
 
 	return fdSet, err
 }
@@ -218,126 +211,11 @@ func somethingToTest() {
 
 	bz, err := proto.Marshal(fdSet)
 	if err != nil {
-		fmt.Println("Error masrhalling", err.Error())
+		fmt.Println("[ERROR] masrhalling", err.Error())
 	}
 
 	if err = os.WriteFile("filename", bz, 0o600); err != nil {
-		fmt.Println("Error masrhalling", err.Error())
+		fmt.Println("[ERROR] masrhalling", err.Error())
 	}
 
-	protofiles, err := protodesc.FileOptions{AllowUnresolvable: true}.NewFiles(fdSet)
-	if err != nil {
-		fmt.Println("error building protoregistry.Files: %w", err.Error())
-	}
-
-	client, err = openClient()
-	if err != nil {
-		fmt.Println("Error on open client:", err.Error())
-	}
-
-	autocliQueryClient := autocliv1.NewQueryClient(client)
-	appOptsRes, err := autocliQueryClient.AppOptions(c, &autocliv1.AppOptionsRequest{})
-	if err != nil {
-		appOptsRes = guessAutocli(protofiles)
-	}
-
-	bz, err = proto.Marshal(appOptsRes)
-	if err != nil {
-		fmt.Println("Error on marshalling appOptsRes:", err.Error())
-	}
-
-	if err := os.WriteFile("appOptsFilename", bz, 0o600); err != nil {
-		fmt.Println("Error while writing the files:", err.Error())
-	}
-
-	//_ := appOptsRes.ModuleOptions
-	//} else {
-	//	bz, err := os.ReadFile(appOptsFilename)
-	//	if err != nil {
-	//		return err
-	//	}
-	//
-	//	var appOptsRes autocliv1.AppOptionsResponse
-	//	if err := proto.Unmarshal(bz, &appOptsRes); err != nil {
-	//		return err
-	//	}
-	//
-	//	c.ModuleOptions = appOptsRes.ModuleOptions
-	//}
-}
-
-func guessAutocli(files *protoregistry.Files) *autocliv1.AppOptionsResponse {
-	fmt.Printf("This chain does not support autocli directly yet. Using some default mappings in the meantime to support a subset of the available services.\n")
-	res := map[string]*autocliv1.ModuleOptions{}
-	files.RangeFiles(func(descriptor protoreflect.FileDescriptor) bool {
-		services := descriptor.Services()
-		n := services.Len()
-		for i := 0; i < n; i++ {
-			service := services.Get(i)
-			serviceName := service.FullName()
-			mapping, ok := defaultAutocliMappings[serviceName]
-			if ok {
-				parts := strings.Split(mapping, " ")
-				numParts := len(parts)
-				if numParts < 2 || numParts > 3 {
-					fmt.Printf("Warning: bad mapping %q found for %q\n", mapping, serviceName)
-					continue
-				}
-
-				modOpts := res[parts[0]]
-				if modOpts == nil {
-					modOpts = &autocliv1.ModuleOptions{}
-					res[parts[0]] = modOpts
-				}
-
-				switch parts[1] {
-				case "query":
-					if modOpts.Query == nil {
-						modOpts.Query = &autocliv1.ServiceCommandDescriptor{
-							SubCommands: map[string]*autocliv1.ServiceCommandDescriptor{},
-						}
-					}
-					if numParts == 3 {
-						modOpts.Query.SubCommands[parts[2]] = &autocliv1.ServiceCommandDescriptor{Service: string(serviceName)}
-					} else {
-						modOpts.Query.Service = string(serviceName)
-					}
-				case "tx":
-					if modOpts.Tx == nil {
-						modOpts.Tx = &autocliv1.ServiceCommandDescriptor{
-							SubCommands: map[string]*autocliv1.ServiceCommandDescriptor{},
-						}
-					}
-					if numParts == 3 {
-						modOpts.Tx.SubCommands[parts[2]] = &autocliv1.ServiceCommandDescriptor{Service: string(serviceName)}
-					} else {
-						modOpts.Tx.Service = string(serviceName)
-					}
-				default:
-					fmt.Printf("Warning: bad mapping %q found for %q\n", mapping, serviceName)
-					continue
-				}
-			}
-		}
-		return true
-	})
-
-	return &autocliv1.AppOptionsResponse{ModuleOptions: res}
-}
-
-var defaultAutocliMappings = map[protoreflect.FullName]string{
-	"cosmos.auth.v1beta1.Query":         "auth query",
-	"cosmos.authz.v1beta1.Query":        "authz query",
-	"cosmos.bank.v1beta1.Query":         "bank query",
-	"cosmos.distribution.v1beta1.Query": "distribution query",
-	"cosmos.evidence.v1.Query":          "evidence query",
-	"cosmos.feegrant.v1beta1.Query":     "feegrant query",
-	"cosmos.gov.v1.Query":               "gov query",
-	"cosmos.gov.v1beta1.Query":          "gov query v1beta1",
-	"cosmos.group.v1.Query":             "group query",
-	"cosmos.mint.v1beta1.Query":         "mint query",
-	"cosmos.params.v1beta1.Query":       "params query",
-	"cosmos.slashing.v1beta1.Query":     "slashing query",
-	"cosmos.staking.v1beta1.Query":      "staking query",
-	"cosmos.upgrade.v1.Query":           "upgrade query",
 }
