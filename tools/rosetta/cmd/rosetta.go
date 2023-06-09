@@ -3,8 +3,12 @@ package cmd
 import (
 	"context"
 	reflectionv1beta1 "cosmossdk.io/api/cosmos/base/reflection/v1beta1"
+	"cosmossdk.io/tools/rosetta"
 	"crypto/tls"
 	"fmt"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	gogoproto "github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -12,11 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"io"
-	"os"
-
-	"cosmossdk.io/tools/rosetta"
-	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 )
 
 // RosettaCommand builds the rosetta root command given
@@ -38,7 +37,7 @@ func RosettaCommand(ir codectypes.InterfaceRegistry, cdc codec.Codec) *cobra.Com
 			conf.WithCodec(ir, protoCodec)
 
 			err = rosetta.LoadPlugin(ir, "default") // These interfaces are common to all chains
-			somethingToTest()
+			somethingToTest(ir)
 			//err = rosetta.LoadPlugin(ir, conf.Blockchain)
 			if err != nil {
 				fmt.Printf("[Rosetta]- Error while loading the plugin: %s", err.Error())
@@ -199,7 +198,7 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 	return fdSet, err
 }
 
-func somethingToTest() {
+func somethingToTest(ir codectypes.InterfaceRegistry) {
 	fmt.Println("1 - Setup client")
 	c := context.Background()
 	client, err := openClient()
@@ -208,14 +207,43 @@ func somethingToTest() {
 	}
 
 	fdSet, err := getFdset(client, c)
-
-	bz, err := proto.Marshal(fdSet)
 	if err != nil {
-		fmt.Println("[ERROR] masrhalling", err.Error())
+		fmt.Println("[ERROR] geting Fdset", err.Error())
 	}
 
-	if err = os.WriteFile("filename", bz, 0o600); err != nil {
-		fmt.Println("[ERROR] masrhalling", err.Error())
-	}
+	fileDescriptor := fdSet.File[0]
+	RegisterInterface(ir, fileDescriptor)
+	//bz, err := proto.Marshal(fdSet)
+	//if err != nil {
+	//	fmt.Println("[ERROR] masrhalling", err.Error())
+	//}
+	//
+	//if err = os.WriteFile("filename", bz, 0o600); err != nil {
+	//	fmt.Println("[ERROR] masrhalling", err.Error())
+	//}
+}
 
+func convertToGogoproto(protoMessage proto.Message) gogoproto.Message {
+	var newProtoMessage = new(extendedProtoMessage)
+	newProtoMessage.Message = protoMessage
+	return *newProtoMessage
+}
+
+func RegisterInterface(registry codectypes.InterfaceRegistry, fileDescriptor *descriptorpb.FileDescriptorProto) {
+	name := fileDescriptor.GetName()
+	protoInterface := fileDescriptor.ProtoReflect().Interface()
+	registry.RegisterInterface(name, &protoInterface)
+	registry.RegisterImplementations(fileDescriptor.ProtoReflect().Interface(), fileDescriptor)
+}
+
+type extendedProtoMessage struct {
+	proto.Message
+}
+
+func (e extendedProtoMessage) Reset() {
+}
+func (e extendedProtoMessage) String() string {
+	return ""
+}
+func (e extendedProtoMessage) ProtoMessage() {
 }
