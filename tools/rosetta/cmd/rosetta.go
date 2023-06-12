@@ -211,8 +211,11 @@ func somethingToTest(ir codectypes.InterfaceRegistry) {
 		fmt.Println("[ERROR] geting Fdset", err.Error())
 	}
 
-	fileDescriptor := fdSet.File[0]
-	RegisterInterface(ir, fileDescriptor)
+	for _, descriptorProto := range fdSet.File {
+		if descriptorProto != nil {
+			RegisterInterface(ir, descriptorProto)
+		}
+	}
 	//bz, err := proto.Marshal(fdSet)
 	//if err != nil {
 	//	fmt.Println("[ERROR] masrhalling", err.Error())
@@ -233,7 +236,8 @@ func RegisterInterface(registry codectypes.InterfaceRegistry, fileDescriptor *de
 	name := fileDescriptor.GetName()
 	protoInterface := fileDescriptor.ProtoReflect().Interface()
 	registry.RegisterInterface(name, &protoInterface)
-	registry.RegisterImplementations(fileDescriptor.ProtoReflect().Interface(), fileDescriptor)
+	implementation := convertToGogoproto(fileDescriptor)
+	registry.RegisterImplementations(&protoInterface, implementation)
 }
 
 type extendedProtoMessage struct {
