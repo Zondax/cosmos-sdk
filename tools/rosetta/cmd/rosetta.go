@@ -16,6 +16,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"io"
+	"io/ioutil"
+	math_bits "math/bits"
+	"os/exec"
+	"strings"
 )
 
 // RosettaCommand builds the rosetta root command given
@@ -61,7 +65,7 @@ func openClient() (client *grpc.ClientConn, err error) {
 	creds := credentials.NewTLS(&tls.Config{
 		MinVersion: tls.VersionTLS12,
 	})
-	endpoint := "evmos-grpc.lavenderfive.com:443"
+	endpoint := "grpc-evmos-ia.cosmosia.notional.ventures:443"
 
 	client, err = grpc.Dial(endpoint, grpc.WithTransportCredentials(creds))
 	if err != nil {
@@ -71,12 +75,7 @@ func openClient() (client *grpc.ClientConn, err error) {
 	return client, err
 }
 
-func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.FileDescriptorSet, err error) {
-	fdSet = &descriptorpb.FileDescriptorSet{}
-	//reflectionClient := reflectionv1.NewReflectionServiceClient(client)
-	//fdRes, err := reflectionClient.FileDescriptors(c, &reflectionv1.FileDescriptorsRequest{})
-
-	var interfaceImplNames []string
+func getInterfaceImplNames(c context.Context, client *grpc.ClientConn) (interfaceImplNames []string, err error) {
 	cosmosReflectBetaClient := reflectionv1beta1.NewReflectionServiceClient(client)
 	interfacesRes, err := cosmosReflectBetaClient.ListAllInterfaces(c, &reflectionv1beta1.ListAllInterfacesRequest{})
 
@@ -86,27 +85,44 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 				InterfaceName: iface,
 			})
 			if err == nil {
-				interfaceImplNames = append(interfaceImplNames, implRes.ImplementationMessageNames...)
+				interfaceImplNames = append(interfaceImplNames, implementationMessageNameCleanup(implRes.GetImplementationMessageNames())...)
 			}
 		}
-	} else {
+	}
+	return interfaceImplNames, err
+}
+
+func implementationMessageNameCleanup(implMessages []string) (cleanImplMessages []string) {
+	for _, implMessage := range implMessages {
+		cleanImplMessages = append(cleanImplMessages, implMessage[1:])
+	}
+
+	return cleanImplMessages
+}
+
+func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.FileDescriptorSet, err error) {
+	fdSet = &descriptorpb.FileDescriptorSet{}
+
+	interfaceImplNames, err := getInterfaceImplNames(c, client)
+	if err != nil {
 		fmt.Println("[ERROR] on getting interfacesResponse implementations: ", err.Error())
+		return fdSet, err
 	}
 
 	reflectClient, err := grpc_reflection_v1alpha.NewServerReflectionClient(client).ServerReflectionInfo(c)
 	if err != nil {
-		fmt.Println("ERROR reflect client", err.Error())
+		fmt.Println("[ERROR] reflect client", err.Error())
+		return fdSet, err
 	}
 
 	fdMap := map[string]*descriptorpb.FileDescriptorProto{}
 	waitListServiceRes := make(chan *grpc_reflection_v1alpha.ListServiceResponse)
-	waitc := make(chan struct{})
+	wait := make(chan struct{})
 	go func() {
 		for {
 			in, err := reflectClient.Recv()
 			if err == io.EOF {
-				// read done.
-				close(waitc)
+				close(wait)
 				return
 			}
 			if err != nil {
@@ -114,6 +130,8 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 			}
 
 			switch res := in.MessageResponse.(type) {
+			case *grpc_reflection_v1alpha.ServerReflectionResponse_ErrorResponse:
+				fmt.Println("[ERROR] Server reflection response:", res.ErrorResponse.String())
 			case *grpc_reflection_v1alpha.ServerReflectionResponse_ListServicesResponse:
 				waitListServiceRes <- res.ListServicesResponse
 			case *grpc_reflection_v1alpha.ServerReflectionResponse_FileDescriptorResponse:
@@ -123,7 +141,6 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 					if err != nil {
 						fmt.Println("[ERROR] error happening while unmarshalling proto message", err.Error())
 					}
-
 					fdMap[fd.GetName()] = fd
 				}
 			}
@@ -133,7 +150,7 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 	if err = reflectClient.Send(&grpc_reflection_v1alpha.ServerReflectionRequest{
 		MessageRequest: &grpc_reflection_v1alpha.ServerReflectionRequest_ListServices{},
 	}); err != nil {
-		fmt.Println("[ERROR] on ServerRefleciio services", err.Error())
+		fmt.Println("[ERROR] on ServerRefleciion services", err.Error())
 	}
 
 	listServiceRes := <-waitListServiceRes
@@ -145,11 +162,12 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 			},
 		})
 		if err != nil {
-			fmt.Println("[ERROR] on ServerRefleciio services", err.Error())
+			fmt.Println("[ERROR] on ServerRefleciion services", err.Error())
 		}
 	}
 
 	for _, msgName := range interfaceImplNames {
+		fmt.Println("- ", msgName)
 		err = reflectClient.Send(&grpc_reflection_v1alpha.ServerReflectionRequest{
 			MessageRequest: &grpc_reflection_v1alpha.ServerReflectionRequest_FileContainingSymbol{
 				FileContainingSymbol: msgName,
@@ -164,32 +182,7 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 		fmt.Println("[ERROR] on closing reflectClient", err.Error())
 	}
 
-	<-waitc
-
-	// we loop through all the file descriptor dependencies to capture any file descriptors we haven't loaded yet
-	cantFind := map[string]bool{}
-	//for {
-	//	missing := missingFileDescriptors(fdMap, cantFind)
-	//	if len(missing) == 0 {
-	//		break
-	//	}
-	//
-	//	err = addMissingFileDescriptors(ctx, client, fdMap, missing)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	// mark all deps that we aren't able to resolve as can't find, so we don't keep looping and get a 429 error
-	//	for _, dep := range missing {
-	//		if fdMap[dep] == nil {
-	//			cantFind[dep] = true
-	//		}
-	//	}
-	//}
-
-	for dep := range cantFind {
-		fmt.Printf("Warning: can't find %s.\n", dep)
-	}
+	<-wait
 
 	for _, descriptorProto := range fdMap {
 		fdSet.File = append(fdSet.File, descriptorProto)
@@ -199,7 +192,6 @@ func getFdset(client *grpc.ClientConn, c context.Context) (fdSet *descriptorpb.F
 }
 
 func somethingToTest(ir codectypes.InterfaceRegistry) {
-	fmt.Println("1 - Setup client")
 	c := context.Background()
 	client, err := openClient()
 	if err != nil {
@@ -233,11 +225,146 @@ func convertToGogoproto(protoMessage proto.Message) gogoproto.Message {
 }
 
 func RegisterInterface(registry codectypes.InterfaceRegistry, fileDescriptor *descriptorpb.FileDescriptorProto) {
-	name := fileDescriptor.GetName()
-	protoInterface := fileDescriptor.ProtoReflect().Interface()
-	registry.RegisterInterface(name, &protoInterface)
-	implementation := convertToGogoproto(fileDescriptor)
-	registry.RegisterImplementations(&protoInterface, implementation)
+	name := "/" + strings.Replace(fileDescriptor.GetName(), "/", ".", -1)
+	//fmt.Println(name)
+	protoInterface := convertToGogoproto(fileDescriptor)
+	//implementation := fileDescriptor.ProtoMessage
+	//fmt.Println(">>>", name, " - ", protoInterface)
+	//registry.RegisterInterface(name, &protoInterface, fileDescriptor)
+	if name == "/ethermint.crypto.v1.ethsecp256k1.keys.proto" {
+		fmt.Println(fileDescriptor.String())
+		fmt.Println(fileDescriptor.MessageType[0])
+		fmt.Println("***", fileDescriptor.GetMessageType())
+		plsWork := convertToGogoproto(fileDescriptor.MessageType[0].ProtoReflect().Interface())
+		fmt.Println("plsWork", plsWork)
+		//protoFilePath := "testFile"
+		//writeProtoFile(fileDescriptor, protoFilePath)
+		//generateProtoCode(protoFilePath)
+		registry.RegisterInterface(strings.Replace(fileDescriptor.GetName(), "/", ".", -1)[:len(fileDescriptor.GetName())-6], &protoInterface, &PubKey{})
+		//registry.RegisterImplementations(&protoInterface, plsWork)
+		fmt.Println("Interfaces", registry.ListAllInterfaces())
+		fmt.Println("", registry.ListImplementations("ethermint.crypto.v1.ethsecp256k1.keys"))
+	}
+}
+
+// PubKey defines a type alias for an ecdsa.PublicKey that implements
+// Tendermint's PubKey interface. It represents the 33-byte compressed public
+// key format.
+type PubKey struct {
+	// key is the public key in byte form
+	Key []byte `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+}
+
+func (m *PubKey) String() string {
+	//TODO implement me
+	return ""
+}
+
+func (m *PubKey) Reset()      { *m = PubKey{} }
+func (*PubKey) ProtoMessage() {}
+func (*PubKey) Descriptor() ([]byte, []int) {
+	return nil, []int{0}
+}
+func (m *PubKey) XXX_Unmarshal(b []byte) error {
+	return nil
+}
+func (m *PubKey) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return nil, nil
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+
+func (m *PubKey) XXX_Size() int {
+	return m.Size()
+}
+
+func (m *PubKey) GetKey() []byte {
+	if m != nil {
+		return m.Key
+	}
+	return nil
+}
+
+func (m *PubKey) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *PubKey) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *PubKey) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Key) > 0 {
+		i -= len(m.Key)
+		copy(dAtA[i:], m.Key)
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PubKey) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Key)
+	if l > 0 {
+		n += 1 + l + sovKeys(uint64(l))
+	}
+	return n
+}
+func sovKeys(x uint64) (n int) {
+	return (math_bits.Len64(x|1) + 6) / 7
+}
+
+func writeProtoFile(fd *descriptorpb.FileDescriptorProto, protoFilePath string) {
+	// Method 1: Marshal to Text format and write to a file
+	binaryData, err := proto.Marshal(fd)
+	if err != nil {
+		fmt.Println("Failed to marshal Proto File Descriptor:", err)
+	}
+	if err := ioutil.WriteFile(protoFilePath+".proto", binaryData, 0644); err != nil {
+		fmt.Println("Failed to write Proto File Descriptor to file:", err)
+	}
+}
+
+func generateProtoCode(protoFilePath string) {
+
+	fmt.Println(protoFilePath + ".pb")
+	// Generate the Go code using protoc command
+	cmd := exec.Command("protoc", "--go_out=", protoFilePath+".proto")
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Failed to generate Go code:", err)
+	}
+
+	// Read the generated Go code from the temporary directory
+	goCode, err := ioutil.ReadFile(protoFilePath + ".pb.go")
+	if err != nil {
+		fmt.Println("Failed to read generated Go code:", err)
+	}
+
+	// Print the generated Go code
+	fmt.Println(string(goCode))
 }
 
 type extendedProtoMessage struct {
