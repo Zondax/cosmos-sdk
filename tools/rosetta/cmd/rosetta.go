@@ -26,13 +26,13 @@ func RosettaCommand(ir codectypes.InterfaceRegistry, cdc codec.Codec) *cobra.Com
 			}
 			conf.WithCodec(ir, protoCodec)
 
-			err = rosetta.LoadPlugin(ir, "default") // These interfaces are common to all chains
+			err = rosetta.LoadPlugin(ir, cmd.Flag("blockchain").Value.String())
 			if err != nil {
-				fmt.Printf("[Rosetta]- Error while loading the plugin: %s", err.Error())
+				fmt.Printf("[Rosetta]- Error while loading default plugin: %s", err.Error())
 				return err
 			}
 
-			err = rosetta.ReflectInterfaces(ir)
+			err = rosetta.ReflectInterfaces(ir, cmd.Flag("grpc").Value.String())
 			if err != nil {
 				fmt.Printf("[Rosetta]- Error while reflecting from grpc server: %s", err.Error())
 				return err

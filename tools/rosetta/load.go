@@ -15,9 +15,9 @@ import (
 	"strings"
 )
 
-func ReflectInterfaces(ir codectypes.InterfaceRegistry) (err error) {
+func ReflectInterfaces(ir codectypes.InterfaceRegistry, endpoint string) (err error) {
 	ctx := context.Background()
-	client, err := openClient("grpc-evmos-ia.cosmosia.notional.ventures:443")
+	client, err := openClient(endpoint)
 	if err != nil {
 		return err
 	}
