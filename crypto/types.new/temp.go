@@ -17,13 +17,13 @@ type Wallet interface {
 // - Manage mTLS keys???
 // https://github.com/hashicorp/go-plugin/blob/main/mtls.go
 type Keyring interface {
-	GetRecords() KeyringRecord[]
+	GetRecords() []KeyringRecord
 
 	// FIXME: different storage solutions? 99 keyrings
 }
 
 type SecureItemMetadata interface {
-	ModificationTime time.Time
+	//ModificationTime time.Time
 }
 
 type SecureItem interface {
@@ -60,20 +60,20 @@ type KeyGenerator interface {
 	// TODO: comments
 }
 
-type Signature interface {
-	Blob
-	CanAggregate() bool
-
-	// TODO: this is more in terms of BLS or similar
-	Aggregate(other []Signature) (Signature, error)
-}
+//type Signature interface {
+//	Blob
+//	CanAggregate() bool
+//
+//	// TODO: this is more in terms of BLS or similar
+//	Aggregate(other []Signature) (Signature, error)
+//}
 
 // /- Signer  (persistence)
 //   - From a keypair object
 //   - From some external reference (remote, etc.)
 //   - Retrieve instance from keyring
 //   - Example: Ledger may keep a pubkey reference that is checked. Locally it can be imported
-type Signer interface {
+type Signerr interface {
 	Verifier
 	New(reference CryptoProvider)
 	Sign(input Digest) Signature
@@ -85,7 +85,7 @@ type Signer interface {
 // - is on curve https://solanacookbook.com/references/keypairs-and-wallets.html#how-to-check-if-a-public-key-has-an-associated-private-key
 // secp256k1
 type Verifier interface {
-	Sign(input Digest, signature Signature) (bool, error)
+	Verify(hash []byte, sig Signature, pk PubKey) (bool, error)
 }
 
 type Encryptor interface {
@@ -138,13 +138,15 @@ type CryptoProvider interface {
 	CanCipher() bool
 	CanGenerate() bool
 
-	GetSigner() Signer
-	GetVerifier() Verifier
-	GetGenerator() KeyGenerator
-	GetCipher() Encryptor
-	GetHasher() Hasher // / ?????
+	GetSigner() (Signer, error)
+	GetVerifier() (Verifier, error)
+	GetGenerator() (KeyGenerator, error)
+	GetCipher() (Encryptor, error)
+	GetHasher() (Hasher, error) // / ?????
 }
 
+type LocalProvider interface {
+}
 type SecureElement interface {
 	CryptoProvider
 }
@@ -161,9 +163,13 @@ type SecretKeypair interface {
 
 type PubKey interface {
 	// / amino
+	Bytes() []byte
+	Address() []byte
 }
 
 type PrivKey interface {
+	Bytes() []byte
+	Pubkey() PubKey
 }
 
 // --------------
