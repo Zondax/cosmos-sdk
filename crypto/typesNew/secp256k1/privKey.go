@@ -1,7 +1,7 @@
 package secp256k1
 
 import (
-	types_new "github.com/cosmos/cosmos-sdk/crypto/types.new"
+	types_new "github.com/cosmos/cosmos-sdk/crypto/typesNew"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 

@@ -2,7 +2,7 @@ package secp256k1
 
 import (
 	"crypto/elliptic"
-	types_new "github.com/cosmos/cosmos-sdk/crypto/types.new"
+	types_new "github.com/cosmos/cosmos-sdk/crypto/typesNew"
 	dsecp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"io"
 )

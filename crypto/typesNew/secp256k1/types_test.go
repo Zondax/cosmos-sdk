@@ -4,7 +4,7 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"github.com/cometbft/cometbft/crypto"
-	ecdsa2 "github.com/cosmos/cosmos-sdk/crypto/types.new/secp256k1/ecdsa"
+	ecdsa2 "github.com/cosmos/cosmos-sdk/crypto/typesNew/secp256k1/ecdsa"
 	"github.com/stretchr/testify/require"
 	"testing"
 )

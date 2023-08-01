@@ -3,7 +3,7 @@ package ecdsa
 import (
 	"errors"
 	"github.com/cometbft/cometbft/crypto"
-	types_new "github.com/cosmos/cosmos-sdk/crypto/types.new"
+	types_new "github.com/cosmos/cosmos-sdk/crypto/typesNew"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )

@@ -1,4 +1,11 @@
-package types_new
+package typesNew
+
+import (
+	"github.com/cosmos/cosmos-sdk/crypto/typesNew/cypher"
+	"github.com/cosmos/cosmos-sdk/crypto/typesNew/keys"
+	"github.com/cosmos/cosmos-sdk/crypto/typesNew/signer"
+	"github.com/cosmos/cosmos-sdk/crypto/typesNew/verifier"
+)
 
 // - Åddress Encoding
 // - bech32 / bech32m
@@ -50,16 +57,6 @@ type SecureStorage interface {
 type RandomnessSource interface {
 }
 
-// - Generate/Derive
-// - From hardware
-// - From pure entropy (KDF)
-// - From previous key material + metadata (BIP44)
-// - Retrieve instance from keyring
-type KeyGenerator interface {
-	// Can.... ??
-	// TODO: comments
-}
-
 //type Signature interface {
 //	Blob
 //	CanAggregate() bool
@@ -67,32 +64,6 @@ type KeyGenerator interface {
 //	// TODO: this is more in terms of BLS or similar
 //	Aggregate(other []Signature) (Signature, error)
 //}
-
-// /- Signer  (persistence)
-//   - From a keypair object
-//   - From some external reference (remote, etc.)
-//   - Retrieve instance from keyring
-//   - Example: Ledger may keep a pubkey reference that is checked. Locally it can be imported
-type Signerr interface {
-	Verifier
-	New(reference CryptoProvider)
-	Sign(input Digest) Signature
-}
-
-// - Verifier
-// - Verify Signature + Digest
-// - Validate pubkey
-// - is on curve https://solanacookbook.com/references/keypairs-and-wallets.html#how-to-check-if-a-public-key-has-an-associated-private-key
-// secp256k1
-type Verifier interface {
-	Verify(hash []byte, sig Signature, pk PubKey) (bool, error)
-}
-
-type Encryptor interface {
-}
-
-type Decryptor interface {
-}
 
 type Hasher interface {
 	Hash(input Blob) Blob
@@ -138,17 +109,18 @@ type CryptoProvider interface {
 	CanCipher() bool
 	CanGenerate() bool
 
-	GetSigner() (Signer, error)
-	GetVerifier() (Verifier, error)
-	GetGenerator() (KeyGenerator, error)
-	GetCipher() (Encryptor, error)
-	GetHasher() (Hasher, error) // / ?????
+	GetSigner() (signer.Signer, error)       //
+	GetVerifier() (verifier.Verifier, error) //
+	GetGenerator() (keys.KeyGenerator, error)
+	GetCipher() (cypher.Cypher, error) // *
+	GetHasher() (Hasher, error)        // / ?????
 }
 
 type LocalProvider interface {
 }
 type SecureElement interface {
 	CryptoProvider
+	Wipe() // TODO -> CLEAR FUNCTION
 }
 
 type LedgerDevice interface {
@@ -157,19 +129,8 @@ type LedgerDevice interface {
 
 type SecretKeypair interface {
 	CryptoProvider
-	PubKey() PubKey
-	PrivKey() PrivKey
-}
-
-type PubKey interface {
-	// / amino
-	Bytes() []byte
-	Address() []byte
-}
-
-type PrivKey interface {
-	Bytes() []byte
-	Pubkey() PubKey
+	PubKey() keys.PubKey
+	PrivKey() keys.PrivKey
 }
 
 // --------------

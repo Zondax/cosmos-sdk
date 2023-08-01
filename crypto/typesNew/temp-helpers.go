@@ -1,4 +1,4 @@
-package types_new
+package typesNew
 
 type DerivationMetadata interface {
 }
