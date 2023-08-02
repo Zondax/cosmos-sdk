@@ -1,0 +1,72 @@
+classDiagram
+
+
+SecureItem <|-- SecuredStorage
+SecureItemMetadata <|-- SecureItem
+
+SecuredStorage : Get(key string) (SecureItem, error)
+SecuredStorage : Set(key string, item SecureItem) error
+SecuredStorage : Delete(key string) error
+SecuredStorage : List() ([]string, error)
+
+CryptoCypher <|-- CryptoProvider
+Hasher <|-- CryptoProvider
+Signer <|-- CryptoProvider
+Verifier <|-- CryptoProvider
+CryptoProvider <|-- SecretElement
+CryptoProvider <|-- SecretKeyPair
+CryptoProvider <|-- SecureElement
+CryptoProvider : GetCypher() (CryptoCypher, error)
+CryptoProvider : GetHasher() (Hasher, error)
+CryptoProvider : GetRandom() (Random, error)
+CryptoProvider : GetRandomBytes(size int) ([]byte, error)
+
+Hasher : Hash() ([]byte, error)
+Hasher : HashString() (string, error)
+
+SecureItem  <|-- CryptoCypher
+CryptoCypher : Encrypt(data Blob) (Blob, error)
+CryptoCypher : Decrypt(data Blob) (Blob, error)
+
+Blob <|-- Digest
+Blob <|-- SecureItem
+Blob <|-- Hasher
+Blob <|-- CryptoCypher
+Blob : Bytes()
+Blob : ReadBlob() ([]byte, error)
+Blob : Wipe()
+
+
+BaseKey <|-- PubKey
+BaseKey <|-- PrivKey
+BaseKey : String() string
+BaseKey : Bytes() []byte
+
+Signature <|-- Verifier
+Signature <|-- Signer
+Signature : Bytes() []byte
+
+Signer 
+Signer : Sign(hash []byte, key PrivKey) (Signature, error)
+
+Verifier
+Verifier : Verify(hash []byte, sig Signature, key PubKey) (bool, error)
+
+PubKey <|-- PrivKey
+PubKey : Address() string
+PubKey <|-- Generator
+PubKey <|-- Verifier
+PubKey <|-- SecretKeyPair
+
+PrivKey : PubKey() PubKey
+PrivKey <|-- Generator
+PrivKey <|-- Signer
+PrivKey <|-- SecretKeyPair
+
+Generator
+Generator : GenerateKey() (PrivKey, error)
+Generator : DeriveKey(pb PubKey) (PrivKey, error)
+
+
+SecretElement
+SecretElement <|-- LedgerDevice
