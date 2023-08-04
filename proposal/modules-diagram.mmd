@@ -1,0 +1,18 @@
+classDiagram
+
+Hasher <|-- CryptoProvider
+CryptoCypher <|-- CryptoProvider
+
+PubKey -- Verifier
+
+PubKey <|-- PrivKey
+PubKey <|-- Generator
+
+PrivKey <|-- Signer
+PrivKey <|-- Generator
+
+Signature <|-- Verifier
+Signature <|-- Signer
+
+Signer <|-- CryptoProvider
+Verifier <|-- CryptoProvider

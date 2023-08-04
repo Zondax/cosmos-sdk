@@ -6,7 +6,6 @@ type BaseKey interface {
 }
 
 type PubKey interface {
-	// / amino
 	BaseKey
 	Address() []byte
 }
