@@ -1,0 +1,39 @@
+sequenceDiagram
+    participant Keyring
+    participant KeyringRecord 
+    participant CryptoProvider
+    
+    Keyring->>Keyring: New()
+    Keyring->>KeyringRecord: GetRecords()
+    KeyringRecord->>KeyringRecord: Restore()
+    KeyringRecord->>Keyring: KeyringRecord Instance
+
+    Keyring->>KeyringRecord: EncryptMessage()
+    KeyringRecord->>CryptoProvider: GetCipher()
+    CryptoProvider->>KeyringRecord: cipher instance
+    KeyringRecord->>Cipher: Encrypt(message, secret)
+    Cipher->>Keyring: EncryptedMessage
+
+    Keyring->>KeyringRecord: NewKey()
+    KeyringRecord->>CryptoProvider: GetGenerator()
+    CryptoProvider->>Generator: new Key
+    Generator->>Keyring: Key
+
+    Keyring->>KeyringRecord: SignMessage()
+    KeyringRecord->>CryptoProvider: GetSigner()
+    CryptoProvider->>KeyringRecord: signer instance
+    KeyringRecord->>Signer: Sign(encryptedmessage, key)
+    Signer->PrivKey: Read()
+    PrivKey->Signer: Key bytes
+    PrivKey->PrivKey: Wipe -- zeroing
+    Signer->Signer: signMessage()
+    Signer->Keyring: Signature
+
+    Keyring->>KeyringRecord: VerifyMessage()
+    KeyringRecord->>CryptoProvider: GetVerifier()
+    CryptoProvider->>KeyringRecord: verifier instance
+    KeyringRecord->>Verifier: Verify(encryptedmessage, signature, key)
+    Verifier->PubKey: Read()
+    PubKey->Verifier: Key bytes
+    Verifier->Verifier: verifyMessage()
+    Verifier->Keyring: true/false
