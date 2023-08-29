@@ -11,9 +11,11 @@
 
 ## Abstract
 
-The crypto module refactor aims to make the module a reliable resource to use across cosmos related projects and among any go projects. As a guideline we are pursuing the X standard.
+TODO: Do this as the end
 
 ## Context
+
+TODO: Improve context
 
 > This section describes the forces at play, including technological, political,
 > social, and project local. These forces are probably in tension, and should be
@@ -21,7 +23,12 @@ The crypto module refactor aims to make the module a reliable resource to use ac
 > describing facts. It should clearly explain the problem and motivation that the
 > proposal aims to resolve.
 
-> {context body}
+* Currently, there is no ADR providing a comprehensive description of the cryptographic module in the Cosmos SDK.
+* There have been multiple requests for a more flexible and extensible approach to cryptography, address management, and more.
+* Several open issues require significant changes for resolution.
+* Similar efforts have been undertaken in the past concerning runtime modules.
+* Existing signing types outside of the crypto module may pose challenges to backward compatibility while striving for a clean interface.
+* Security implications must be considered during the module's redesign.
 
 ### Proposed architecture
 
@@ -34,6 +41,11 @@ The architecture objectives that define our design are based on the following co
 ### **Modules**
 
 Modules aim to encapsulate behaviours and to provide simple interface to extend and reuse.
+
+```mermaid
+classDiagram
+
+```
 
 ```mermaid
 classDiagram
@@ -68,7 +80,7 @@ This is a wrapper for the widely used `[]byte` array. Since crypto module handle
 
 A Crypto provider is the middleware object that handles the interaction with different instanced modules, A provider could be seen as a controller.
 
-``` go
+```go
 type CryptoProvider interface {
  CanProvidePubKey() bool
  CanProvidePrivKey() bool
@@ -77,11 +89,11 @@ type CryptoProvider interface {
  CanCipher() bool
  CanGenerate() bool
 
- GetSigner() (signer. Signer, error) 
- GetVerifier() (verifier. Verifier, error) 
+ GetSigner() (signer. Signer, error)
+ GetVerifier() (verifier. Verifier, error)
  GetGenerator() (keys.KeyGenerator, error)
- GetCipher() (cypher.Cipher, error) 
- GetHasher() (Hasher, error) 
+ GetCipher() (cypher.Cipher, error)
+ GetHasher() (Hasher, error)
 }
 ```
 
@@ -93,7 +105,7 @@ Keyring serves as a middleware between ledgers and the cosmos-sdk modules. It pe
 
 A keyring record uses a crypto provider, and serves as a bridge between a specific ledger and the modules implementations, enabling ledgers to use the crypto module desired implementations, it should follow this interface:
 
-``` go
+```go
 // Equivalent to record?
 type KeyringRecord interface {
  CryptoProvider // ledger, localKP, remoteKP, etc.
@@ -131,9 +143,9 @@ These Key objects contain the algorithms to generate keys.
 
 Base Key struct
 
-``` go
+```go
 type KeyStruct struct {
- key Blob 
+ key Blob
 }
 ```
 
@@ -150,7 +162,7 @@ The generator module is responsible for generating such keys.
 
 ##### PubKey
 
-``` go
+```go
 type PubKey interface {
  BaseKey
  Address() []byte // Generates the address according to the defined types
@@ -159,18 +171,18 @@ type PubKey interface {
 
 ##### PrivKey
 
-``` go
+```go
 type PrivKey interface {
  BaseKey
  Pubkey() PubKey //Generate a public key out of a private key
 }
 ```
 
-#### **Signatures**
+#### Signatures
 
 A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer.
 
-``` go
+```go
 type Signature struct {
  data Blob
 }
@@ -180,7 +192,7 @@ type Signature struct {
 
 Interface responsible for Signing a message and returning the generated Signature.
 
-``` go
+```go
 type Signer interface {
  Sign(Blob, PrivKey) (Signature, error)
 }
@@ -190,7 +202,7 @@ type Signer interface {
 
 Verifies if given a message, it's signature belongs to said public key.
 
-``` go
+```go
 type Verifier interface {
  Verify(Blob, Signature, PubKey) (bool, error)
 }
@@ -200,10 +212,10 @@ type Verifier interface {
 
 A cipher is an algorithm focused for encryption and decryption of data. Given a message it should operate through a secret.
 
-``` go
+```go
 type Cipher interface {
- Encryptor
- Decryptor
+    Encryptor
+    Decryptor
 }
 ```
 
@@ -211,9 +223,9 @@ type Cipher interface {
 
 Given a message and a secret, ciphers such message according to the implemented algorithm.
 
-``` go
+```go
 type Encryptor interface {
- Encrypt(message Blob, secret Blob) (encryptedMessage Blob, error)
+    Encrypt(message Blob, secret Blob) (encryptedMessage Blob, error)
 }
 ```
 
@@ -221,9 +233,9 @@ type Encryptor interface {
 
 Given a Ciphered message and a secret, decrypts such message according to the implemented algorithm.
 
-``` go
+```go
 type Decryptor interface {
- Decrypt(message Blob, secret Blob) (decryptedMessage Blob, error)
+    Decrypt(message Blob, secret Blob) (decryptedMessage Blob, error)
 }
 ```
 
@@ -233,7 +245,7 @@ Example of cipher xSalsaSymstric20 implementation. You will see that the new imp
 
 **Original:**
 
-``` go
+```go
 func EncryptSymmetric(plaintext, secret []byte) (ciphertext []byte) {
  if len(secret) != secretLen {}
  ...
@@ -249,7 +261,7 @@ func DecryptSymmetric(ciphertext, secret []byte) (plaintext []byte, err error) {
 
 **New**
 
-``` go
+```go
 type SalsaCypher struct {
  Cypher
 }
@@ -271,7 +283,7 @@ func (cypher SalsaCypher) Decrypt(ciphertext, secret) (Blob, err error) {
 
 Hashing functions should be placed in this module. Trough the following interface.
 
-``` go
+```go
 type Hasher interface {
  Hash(input Blob) Blob
 
@@ -283,7 +295,6 @@ type Hasher interface {
 
 ```mermaid
 classDiagram
-
 
 SecureItem <|-- SecuredStorage
 SecureItemMetadata <|-- SecureItem
@@ -330,7 +341,7 @@ Signature <|-- Verifier
 Signature <|-- Signer
 Signature : Bytes() []byte
 
-Signer 
+Signer
 Signer : Sign(hash []byte, key PrivKey) (Signature, error)
 
 Verifier
@@ -371,9 +382,9 @@ In the following scenario the USER uses an external ledger to:
 ```mermaid
 sequenceDiagram
     participant Keyring
-    participant KeyringRecord 
+    participant KeyringRecord
     participant CryptoProvider
-    
+
     Keyring->>Keyring: New()
     Keyring->>KeyringRecord: GetRecords()
     KeyringRecord->>KeyringRecord: Restore()
@@ -475,4 +486,3 @@ changes. Other ADRs can choose to include links to test cases if applicable.
 ## References
 
 * {reference link}
-

@@ -102,8 +102,10 @@ type CryptoCipher interface {
 // implement
 // - LocalKeyPair
 type CryptoProvider interface {
+	// TODO: Define how capabilities can be expressed
 	CanProvidePubKey() bool
 	CanProvidePrivKey() bool
+	CanExport() bool
 	CanSign() bool
 	CanVerify() bool
 	CanCipher() bool
@@ -114,23 +116,14 @@ type CryptoProvider interface {
 	GetGenerator() (keys.KeyGenerator, error)
 	GetCipher() (cypher.Cypher, error) // *
 	GetHasher() (Hasher, error)        // / ?????
+	Wipe()                             // TODO -> CLEAR FUNCTION
 }
 
 type LocalProvider interface {
 }
-type SecureElement interface {
-	CryptoProvider
-	Wipe() // TODO -> CLEAR FUNCTION
+
+type LedgerDevice struct {
+	// complies with CryptoProvider
 }
 
-type LedgerDevice interface {
-	SecureElement
-}
-
-type SecretKeypair interface {
-	CryptoProvider
-	PubKey() keys.PubKey
-	PrivKey() keys.PrivKey
-}
-
-// --------------
+// We need to find a way to link metadata to key material to track compatibility

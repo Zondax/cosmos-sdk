@@ -29,14 +29,12 @@ Backward Compatibility & Migration
 
 * Design and propose a suitable migration path, ensuring transitions are as seamless as possible.
 
+* Evaluate and decide on the relevance of existing systems and tools, incorporating or deprecating them based on their alignment with the module's new vision.
+
 Developer-Centric Approach
 
 * Prioritize clear, intuitive interfaces and best-practice design principles.
 * Improve Developer Experience: Provide tools, samples, and best practices to foster an efficient and user-friendly development environment.
-
-Address Legacy Systems
-
-* Evaluate and decide on the relevance of existing systems and tools, incorporating or deprecating them based on their alignment with the module's new vision.
 
 Leverage Extensibility
 
