@@ -5,6 +5,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/keys"
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/signer"
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/verifier"
+	"github.com/google/go-cmp/cmp/internal/function"
 )
 
 // - Åddress Encoding
@@ -27,6 +28,14 @@ type Wallet interface {
 // - Armoring - Not always possible (OpenPGP support)
 // - Manage mTLS keys???
 // https://github.com/hashicorp/go-plugin/blob/main/mtls.go
+
+type Keyring interface {
+	Initialize(SecureStorageConfigsFilePath string) error
+	ListAvailableStorage() ([]string, error)
+	Keys() ([]string, error)
+}
+
+
 type Keyring interface {
 	GetProviders() []Providers
 
