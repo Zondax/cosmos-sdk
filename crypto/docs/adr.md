@@ -40,6 +40,8 @@ The architecture objectives that define our design are based on the following co
 
 ### **Modules**
 
+TODO: Module vs package
+
 Modules aim to encapsulate behaviours and to provide simple interface to extend and reuse.
 
 ```mermaid
@@ -81,14 +83,16 @@ This is a wrapper for the widely used `[]byte` array. Since crypto module handle
 A Crypto provider is the middleware object that handles the interaction with different instanced modules, A provider could be seen as a controller.
 
 ```go
-type CryptoProvider interface {
- CanProvidePubKey() bool
+TODO: Capabilities/ Options? @Eze
+CanProvidePubKey() bool
  CanProvidePrivKey() bool
  Consign() bool
  CanVerify() bool
  CanCipher() bool
  CanGenerate() bool
 
+
+type CryptoProvider interface {
  GetSigner() (signer. Signer, error)
  GetVerifier() (verifier. Verifier, error)
  GetGenerator() (keys.KeyGenerator, error)
