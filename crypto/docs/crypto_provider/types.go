@@ -1,15 +1,16 @@
 package cryptoprovider
 
 import (
+	"github.com/cosmos/cosmos-sdk/crypto/docs/secure_item"
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/cypher"
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/keys"
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/signer"
 	"github.com/cosmos/cosmos-sdk/crypto/typesNew/verifier"
 )
 
-type CryptoProviderOptions interface {
+type ProviderOptions interface {
 	CanProvidePubKey() bool
-	CanProvidePrivKey() bool
+	CanProvidePrivateKey() bool
 	CanExport() bool
 	CanSign() bool
 	CanVerify() bool
@@ -18,9 +19,9 @@ type CryptoProviderOptions interface {
 }
 
 type CryptoProvider interface {
-	CryptoProviderOptions
+	ProviderOptions
 
-	Load(SecureItem) error // Builds the corresponding provider
+	Build(item secure_item.SecureItem) (*CryptoProvider, error) // Builds the corresponding provider
 
 	GetSigner() (signer.Signer, error)
 	GetVerifier() (verifier.Verifier, error)
@@ -30,21 +31,4 @@ type CryptoProvider interface {
 	Wipe()
 }
 
-type CryptoProviderBuilder struct {
-}
-
-func (c CryptoProviderBuilder) Build(providerItem SecureItem) CryptoProvider {
-	switch providerItem.Metadata.Type {
-	case "Ledger":
-		ledger := NewLedgerProvider() // returns a CryptoProvider
-		ledger.Load(providerItem)
-		return ledger
-
-	case "Keychain":
-		keychain := NewKeychainProvider() // returns a CryptoProvider
-		keychain.Load(providerItem)
-		return keychain
-	}
-
-	return nil
-}
+type ProviderBuilder func(item secure_item.SecureItem) (CryptoProvider, error)

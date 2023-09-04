@@ -1,40 +1,28 @@
 package keyring
 
-import "time"
+import (
+	cryptoprovider "github.com/cosmos/cosmos-sdk/crypto/docs/crypto_provider"
+	"github.com/cosmos/cosmos-sdk/crypto/docs/secure_storage"
+)
 
-type SecureStorageSourceMetadata struct {
-	Type string
-	Name string
-}
-
-type SecureStorageSourceConfig struct {
-	Metadata SecureStorageSourceMetadata
-	Config   any // specific config for the desired backend, if necessary
-}
-
-type SecureItemMetadata struct {
-	ModificationTime time.Time
-	UUID             string
-}
-
-type SecureItem struct {
-	Metadata SecureItemMetadata
-	Blob     []byte // versioned protobuf blob
-}
-
-type SecureStorage interface {
-	Get(key string) (SecureItem, error)
-	Set(key string, item SecureItem) error
-	Delete(key string) error
-	List() ([]string, error)
+type ConfigLoader interface {
+	LoadConfig() (error, []secure_storage.SecureStorageSourceConfig)
 }
 
 type Keyring interface {
-	Init() //  registers all available secure backends (keychain, aws, 1pass, etc)
+	Init(ConfigLoader)
 
-	DeleteSecureStorageSource(name string) error
-	ListSecureStorageSources() ([]SecureStorageSourceMetadata, error)
-	AddSecureStorageSource(config SecureStorageSourceConfig) error
-	GetSecureStorageSource(name string) (SecureStorage, error)
-	Keys() ([]string, error) // calls List() for every SecureStorage
+	// SecureStorage management
+	RegisterStorageSource(string, secure_storage.SecureStorageBuilder)
+	DeleteSource(name string) error
+	ListSources() ([]secure_storage.SecureStorageSourceMetadata, error)
+	AddSource(secure_storage.SecureStorageSourceConfig) error
+	GetSource(string) (secure_storage.SecureStorage, error)
+
+	// CryptoProvider management
+	RegisterProvider(string, cryptoprovider.ProviderBuilder)
+	GetProvider(string) (cryptoprovider.CryptoProvider, error)
+
+	// List keys on all available SecureStorage instances
+	Keys() ([]string, error)
 }
