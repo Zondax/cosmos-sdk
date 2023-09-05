@@ -274,12 +274,29 @@ type Hasher interface {
 
 This module contains the different hashing algorithms and conventions agreed on this matter.
 
-```go
-type Hasher interface {
- Hash(input Blob) Blob
- CanHashIncrementally() bool
-}
-```
+#### Codec
+
+This module will continue to register types and interfaces from the module according to the interface registry structure.
+
+#### Module structure
+
+Crypto module structure would look similar to this
+- codec
+- cipher
+  - encryption
+  - decryption
+  - hashing
+- docs
+- keyring
+  - secureItem
+  - secureStorage
+- keys
+- provider
+- signature
+  - signer
+  - verifier
+- wallet
+- types
 
 ### Overview of the whole design
 
