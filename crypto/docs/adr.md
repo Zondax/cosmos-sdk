@@ -15,14 +15,6 @@ TODO: Do this as the end
 
 ## Context
 
-TODO: Improve context
-
-> This section describes the forces at play, including technological, political,
-> social, and project local. These forces are probably in tension, and should be
-> called out as such. The language in this section is value-neutral. It is simply
-> describing facts. It should clearly explain the problem and motivation that the
-> proposal aims to resolve.
-
 * Currently, there is no ADR providing a comprehensive description of the cryptographic module in the Cosmos SDK.
 * There have been multiple requests for a more flexible and extensible approach to cryptography, address management, and more.
 * Several open issues require significant changes for resolution.
@@ -40,14 +32,13 @@ The architecture objectives that define our design are based on the following co
 
 ### **Modules**
 
-TODO: Module vs package
-
 Modules aim to encapsulate behaviours and to provide simple interface to extend and reuse.
 
-```mermaid
-classDiagram
-
-```
+These are the following reasons to use modules over packages:
+- **Improved dependency management**: Modules have a built-in dependency management system that makes it easy to track and manage 
+  dependencies.
+- **Lightweight**: Users of the SDK could decide what modules to use, keeping simpler dependencies.
+- **Simplified development**: Extending a module with a reduced scope allows users to handle their own implementations easier. 
 
 ```mermaid
 classDiagram
@@ -70,17 +61,12 @@ Signer <|-- CryptoProvider
 Verifier <|-- CryptoProvider
 ```
 
-#### Types
-
-Each module will have its own types to keep everything as isolated as possible, yet there are some basic types shared across all part of the crypto module itself.
-
-##### Blob
-
-This is a wrapper for the widely used `[]byte` array. Since crypto module handles sensitive information, the objective is to provide some extra security around such type Like Zeroing its values after a read operation.
-
 #### Crypto provider
 
-A Crypto provider is the middleware object that handles the interaction with different instanced modules, A provider could be seen as a controller.
+A Crypto provider is the middleware object that handles the interaction with different instanced modules, A provider could be seen as a controller. 
+
+It is created through a factory / builder method which contains all the implementations of the required interfaces. It aims to encapsulate
+the api of the crypto modules in one place. 
 
 ```go
 TODO: Capabilities/ Options? @Eze
@@ -103,47 +89,77 @@ type CryptoProvider interface {
 
 #### **Keyring**
 
-Keyring serves as a middleware between ledgers and the cosmos-sdk modules. It performs operations of storing, retrieving data and allowing ledgers to perform operations such as signing and verifying.
+Keyring serves as a middleware between ledgers and the cosmos-sdk modules. It performs operations of storing, retrieving data 
+and allowing ledgers to perform operations such as signing and verifying.
 
-##### KeyringRecord
-
-A keyring record uses a crypto provider, and serves as a bridge between a specific ledger and the modules implementations, enabling ledgers to use the crypto module desired implementations, it should follow this interface:
-
-```go
-// Equivalent to record?
-type KeyringRecord interface {
- CryptoProvider // ledger, localKP, remoteKP, etc.
-
- EncryptionProvider() // localKP, remoteKP, etc.
- Store() error
- Restore() error
-}
-```
-
-Examples: Ledger nano, Trezos, remoteKeyProvider
+Keyring will get the information related to keys contained in a **secure item** through a **secure storage** object. Trough 
+keyring, Users can register their desired crypto providers to use and their respective storages implementations, It then 
+matches the UUID to the registered interfaces. Returning the specific provider for interacting with a key stored in a secure
+storage.
 
 ##### SecureItem
 
-* Metadata
+A secure item consists of a specific Key instance registered on keyring. It also contains the metadata for interacting with the respective
+key. Such metadata could be encoding, encryption, etc.
 
 ##### SecureStorage
 
-* Metadata
+A secures storage represents a vault where one or more **secure items** could be stored. In order to get a secure item, the user
+will have to interact with a secure storage before getting the secure item. Secure storage knows how and where to interact with
+in order to get the keys.
 
-##### SecureElement
+```go
+type SecureStorageSourceMetadata struct {
+    Type string
+    Name string
+}
 
-##### LedgerDevice
+type SecureStorageSourceConfig struct {
+    Metadata SecureStorageSourceMetadata
+    Config   any // specific config for the desired backend, if necessary
+}
+
+type SecureStorageBuilder func(SecureStorageSourceConfig) (SecureStorage, error)
+
+type SecureStorage interface {
+  // Build builds the corresponding secure storage backend
+  Build(SecureStorageSourceConfig) (SecureStorage, error)
+  
+  // Get returns the SecureItem matching the key or ErrKeyNotFound
+  Get(string) (secure_item.SecureItem, error)
+  // GetMetadata returns the metadata field of the SecureItem
+  GetMetadata(string) (secure_item.SecureItemMetadata, error)
+  // Set stores the SecureItem on the backend
+  Set(string, secure_item.SecureItem) error
+  // Remove removes the SecureItem matching the key
+  Remove(string) error
+  // Keys returns a slice of all keys stored on the backend
+  Keys() ([]string, error)
+}
+```
+
+#### **Wallet**
+
+The wallet API contains the blockchain specific use cases of the crypto module. It is responsible for:
+- Signing and Verifying messages.
+- generating addresses out of keys
+
+Since wallet interacts with the user keys, it contains an instance of the Keyring, it is also where the blockchain specific
+logic should reside.
+
+##### Blob
+
+This is a wrapper for the widely used `[]byte` type that is used when handling binary data. Since crypto module handles sensitive information,
+the objective is to provide some extra security capabilities around such type as:
+- Zeroing values after a read operation.
+- Securely handling data.
+
+These blob structures would be passed within components of the crypto module. For example: Signature information
 
 #### **Keys**
 
-A key object is responsible for containing the **BLOB** key information required and used in the following modules:
-
-* **Cipher**: Encrypt / Decrypt information
-* **Signer**: Generate a signature
-* **Verifier**: Verify signatures
-* Derive new keys
-
-These Key objects contain the algorithms to generate keys.
+A key object is responsible for containing the **BLOB** key information. Keys might not be passed through functions and it is 
+suggested to interact through crypto providers to limit the exposure to vulnerabilities. 
 
 Base Key struct
 
@@ -169,7 +185,6 @@ The generator module is responsible for generating such keys.
 ```go
 type PubKey interface {
  BaseKey
- Address() []byte // Generates the address according to the defined types
 }
 ```
 
@@ -184,7 +199,8 @@ type PrivKey interface {
 
 #### Signatures
 
-A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer.
+A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer 
+trough their public key.
 
 ```go
 type Signature struct {
@@ -194,7 +210,7 @@ type Signature struct {
 
 ##### Signer
 
-Interface responsible for Signing a message and returning the generated Signature.
+Interface responsible for Signing a message and returning the generated Signature. It is an algorithm tied to a family of keys. 
 
 ```go
 type Signer interface {
@@ -204,7 +220,7 @@ type Signer interface {
 
 ##### Verifier
 
-Verifies if given a message, it's signature belongs to said public key.
+Verifies if given a message belongs to a public key by validating against it's respective signature.
 
 ```go
 type Verifier interface {
@@ -214,7 +230,7 @@ type Verifier interface {
 
 #### Cipher
 
-A cipher is an algorithm focused for encryption and decryption of data. Given a message it should operate through a secret.
+A cipher is an api for encryption and decryption of data. Given a message it should operate through a secret.
 
 ```go
 type Cipher interface {
@@ -243,54 +259,24 @@ type Decryptor interface {
 }
 ```
 
-##### Example: xSalsaSymetric20
+#### Hasher
 
-Example of cipher xSalsaSymstric20 implementation. You will see that the new implementation is cleaner and tied to an interface, ensuring that the function will be reachable by the existing code.
-
-**Original:**
+This module contains the different hashing algorithms and conventions agreed on this matter. 
 
 ```go
-func EncryptSymmetric(plaintext, secret []byte) (ciphertext []byte) {
- if len(secret) != secretLen {}
- ...
-    Return ciphertext
-}
-
-func DecryptSymmetric(ciphertext, secret []byte) (plaintext []byte, err error) {
- if len(secret) != secretLen {}
- ...
- return plaintext, nil
-}
-```
-
-**New**
-
-```go
-type SalsaCypher struct {
- Cypher
-}
-
-func (cypher SalsaCypher) Encrypt(message, secret) (Blob, err error) {
- if len(secret) != secretLen {}
- ...
- return nil, nil
-}
-
-func (cypher SalsaCypher) Decrypt(ciphertext, secret) (Blob, err error) {
- if len(secret) != secretLen {}
- ..
- return plaintext, nil
+type Hasher interface {
+ Hash(input Blob) Blob
+ CanHashIncrementally() bool
 }
 ```
 
 #### Hasher
 
-Hashing functions should be placed in this module. Trough the following interface.
+This module contains the different hashing algorithms and conventions agreed on this matter.
 
 ```go
 type Hasher interface {
  Hash(input Blob) Blob
-
  CanHashIncrementally() bool
 }
 ```
@@ -371,7 +357,7 @@ SecretElement
 SecretElement <|-- LedgerDevice
 ```
 
-### Example
+### Use cases
 
 In the following scenario the USER uses an external ledger to:
 
@@ -441,7 +427,9 @@ sequenceDiagram
 
 ## Alternatives
 
-The alternatives may vary in the way of distributing the modules, putting some modules together as for example verify and signing in one place. This will affect the granularity of the code, thus the reusability and modularity. We aim to balance between simplicity and granularity.
+The alternatives may vary in the way of distributing the modules, putting some modules together as for example verify and signing in 
+one place. This will affect the granularity of the code, thus the reusability and modularity. We aim to balance between simplicity and 
+granularity.
 
 ## Decision
 
@@ -455,11 +443,6 @@ We will:
 ## Consequences
 
 ### Backwards Compatibility
-
-> All ADRs that introduce backwards incompatibilities must include a section
-> describing these incompatibilities and their severity. The ADR must explain
-> how the author proposes to deal with these incompatibilities. ADR's submissions
-> without a sufficient backwards compatibility treatise may be rejected outright.
 
 This refactor will involve changes on how the module is structured, providing cleaner interfaces and easier ways to use and extend. The impact should be minimal and not breaking any previous generated data.
 

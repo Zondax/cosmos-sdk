@@ -24,6 +24,7 @@ type Keyring interface {
 
 	// CryptoProvider management
 	RegisterProvider(string, cryptoprovider.ProviderBuilder)
+	RegisterStorage(string, KeyStore)
 
 	// NewMnemonic generates a new mnemonic, derives a hierarchical deterministic key from it, and
 	// persists the key to storage. Returns the generated mnemonic and the key Info.
@@ -36,8 +37,6 @@ type Keyring interface {
 	NewAccount()
 
 	Keys() ([]string, error)
-	KeyByAddress(string) (cryptoprovider.CryptoProvider, error)
 
 	Delete(string) error
-	DeleteByAddress(string) error
 }
