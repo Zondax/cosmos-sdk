@@ -383,6 +383,20 @@ In the following scenario the USER uses an external ledger to:
 
 **Flow overview**
 
+***Initialization***
+
+```mermaid
+sequenceDiagram
+    participant Keyring
+    participant ConfigLoader
+    participant SecureStorage
+    
+    SecureStorage->>Keyring: RegisterStorageSource()
+
+```
+
+
+
 ```mermaid
 sequenceDiagram
     participant Keyring

@@ -15,10 +15,17 @@ type SecureStorageSourceConfig struct {
 type SecureStorageBuilder func(SecureStorageSourceConfig) (SecureStorage, error)
 
 type SecureStorage interface {
+	// Build builds the corresponding secure storage backend
 	Build(SecureStorageSourceConfig) (SecureStorage, error)
 
+	// Get returns the SecureItem matching the key or ErrKeyNotFound
 	Get(string) (secure_item.SecureItem, error)
-	Store(string, secure_item.SecureItem) error
-	Delete(string) error
-	List() ([]string, error)
+	// GetMetadata returns the metadata field of the SecureItem
+	GetMetadata(string) (secure_item.SecureItemMetadata, error)
+	// Set stores the SecureItem on the backend
+	Set(string, secure_item.SecureItem) error
+	// Remove removes the SecureItem matching the key
+	Remove(string) error
+	// Keys returns a slice of all keys stored on the backend
+	Keys() ([]string, error)
 }
