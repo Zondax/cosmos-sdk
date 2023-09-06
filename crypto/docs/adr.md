@@ -47,7 +47,6 @@ classDiagram
 
 Hasher <|-- CryptoProvider
 CryptoCypher <|-- CryptoProvider
-
 PubKey -- Verifier
 
 PubKey <|-- PrivKey
@@ -79,15 +78,14 @@ Signer <|-- CryptoProvider
 Verifier <|-- CryptoProvider
 
 KeyRing --|> CryptoProvider
-```
 
-```go
-type CryptoProvider interface {
- GetSigner() (signer. Signer, error)
- GetVerifier() (verifier. Verifier, error)
- GetCipher() (cypher.Cipher, error)
- GetHasher() (Hasher, error)
-}
+CryptoProvider : Build(item secure_item.SecureItem) (*CryptoProvider, error) // Builds the corresponding provider
+CryptoProvider : GetSigner() (signer.Signer, error)
+CryptoProvider : GetVerifier() (verifier.Verifier, error)
+CryptoProvider : GetGenerator() (keys.KeyGenerator, error)
+CryptoProvider : GetCipher() (cypher.Cypher, error)
+CryptoProvider : GetHasher() (Hasher, error)
+CryptoProvider : Wipe()
 ```
 
 #### **Keyring**
@@ -111,11 +109,24 @@ SecuredStorage : Delete(key string) error
 SecuredStorage : List() ([]string, error)
 
 SecureItem <|-- SecuredStorage
+SecureItem : Metadata SecureItemMetadata
+SecureItem :  Blob []byte
 SecureItemMetadata <|-- SecureItem
 
 Key <|-- SecureItem
 
 Wallet --|> KeyRing
+Wallet : Address()
+Wallet : Sign()
+Wallet : Verify()
+
+KeyRing : Init(ConfigLoader, KeyStore)
+KeyRing : RegisterProvider(string, cryptoprovider.ProviderBuilder)
+KeyRing : RegisterStorage(string, secure_storage.SecureStorageBuilder)
+KeyRing : NewMnemonic()
+KeyRing : NewAccount()
+KeyRing : Keys() ([]string, error)
+KeyRing : Delete(string) error
 ```
 
 ##### SecureItem

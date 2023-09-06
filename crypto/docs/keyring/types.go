@@ -9,22 +9,12 @@ type ConfigLoader interface {
 	LoadConfig() (error, []secure_storage.SecureStorageSourceConfig)
 }
 
-type KeyStore interface {
-	RegisterStorageSource(string, secure_storage.SecureStorageBuilder)
-	Init([]secure_storage.SecureStorageSourceConfig)
-
-	DeleteSource(name string) error
-	ListSources() ([]secure_storage.SecureStorageSourceMetadata, error)
-	AddSource(secure_storage.SecureStorageSourceConfig) error
-	GetSource(string) (secure_storage.SecureStorage, error)
-}
-
 type Keyring interface {
-	Init(ConfigLoader, KeyStore)
+	Init(ConfigLoader)
 
 	// CryptoProvider management
 	RegisterProvider(string, cryptoprovider.ProviderBuilder)
-	RegisterStorage(string, KeyStore)
+	RegisterStorage(string, secure_storage.SecureStorageBuilder)
 
 	// NewMnemonic generates a new mnemonic, derives a hierarchical deterministic key from it, and
 	// persists the key to storage. Returns the generated mnemonic and the key Info.
