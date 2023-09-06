@@ -11,7 +11,9 @@
 
 ## Abstract
 
-TODO: Do this as the end
+This ADR proposes a refactor of the crypto module's structure and interfaces to improve modularity, reusability, and maintainability.
+The refactor involves defining types and interfaces, restructuring the module, and implementing unit tests.
+The goal is to provide cleaner interfaces, easier extension, more test coverage and a single place of truth for the crypto functionality.
 
 ## Context
 
@@ -46,7 +48,9 @@ These are the following reasons to use modules over packages:
 classDiagram
 
 Keyring <|-- Wallet
-CryptoProvider <|-- Keyring
+SecureStorage <|-- Keyring
+SecureItem <|-- SecureStorage
+CryptoProvider <|-- SecureItem
 
 Hasher <|-- CryptoProvider
 CryptoCypher <|-- CryptoProvider
@@ -105,25 +109,10 @@ type SecureItemMetadata struct {
 	UUID             string
 }
 ```
-##### **Keyring**
-
-*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
-and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
-
-
-```go
-type Keyring interface {
-	RegisterCryptoProvider(string, ProviderBuilder)
-	RegisterSecureStorage(string, SecureStorageBuilder)
-
-	GetCryptoProvider(key string) (CryptoProvider, error)
-	Keys() ([]string, error)
-}
-```
 
 ##### SecureStorage
 
-A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys. 
+A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys.
 Different implementations of *Secure Storage* will be available to cater to various storage requirements:
 
 * FileSystem: This implementation stores the Secure Items in a designated folder within the file system.
@@ -148,6 +137,22 @@ type SecureStorage interface {
   Set(string, SecureItem) error
   Remove(string) error
   Keys() ([]string, error)
+}
+```
+
+##### **Keyring**
+
+*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
+and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
+
+
+```go
+type Keyring interface {
+	RegisterCryptoProvider(string, ProviderBuilder)
+	RegisterSecureStorage(string, SecureStorageBuilder)
+
+	GetCryptoProvider(key string) (CryptoProvider, error)
+	Keys() ([]string, error)
 }
 ```
 
@@ -310,99 +315,21 @@ type Hasher interface {
 
 Crypto module structure would look similar to this
 
-- cipher
-  - encryption
-  - decryption
-  - hashing
-- docs
-- keyring
-  - secureItem
-  - secureStorage
-- keys
-- provider
-- signature
-  - signer
-  - verifier
-- wallet
-
-
-// Maybe delete this ?
-### Overview of the whole design
-
-```mermaid
-classDiagram
-
-SecureItem <|-- SecuredStorage
-SecureItemMetadata <|-- SecureItem
-
-SecuredStorage : Get(key string) (SecureItem, error)
-SecuredStorage : Set(key string, item SecureItem) error
-SecuredStorage : Delete(key string) error
-SecuredStorage : List() ([]string, error)
-
-CryptoCypher <|-- CryptoProvider
-Hasher <|-- CryptoProvider
-Signer <|-- CryptoProvider
-Verifier <|-- CryptoProvider
-CryptoProvider <|-- SecretElement
-CryptoProvider <|-- SecretKeyPair
-CryptoProvider <|-- SecureElement
-CryptoProvider : GetCypher() (CryptoCypher, error)
-CryptoProvider : GetHasher() (Hasher, error)
-CryptoProvider : GetRandom() (Random, error)
-CryptoProvider : GetRandomBytes(size int) ([]byte, error)
-
-Hasher : Hash() ([]byte, error)
-Hasher : HashString() (string, error)
-
-SecureItem  <|-- CryptoCypher
-CryptoCypher : Encrypt(data Blob) (Blob, error)
-CryptoCypher : Decrypt(data Blob) (Blob, error)
-
-Blob <|-- Digest
-Blob <|-- SecureItem
-Blob <|-- Hasher
-Blob <|-- CryptoCypher
-Blob : Bytes()
-Blob : ReadBlob() ([]byte, error)
-Blob : Wipe()
-
-
-BaseKey <|-- PubKey
-BaseKey <|-- PrivKey
-BaseKey : String() string
-BaseKey : Bytes() []byte
-
-Signature <|-- Verifier
-Signature <|-- Signer
-Signature : Bytes() []byte
-
-Signer
-Signer : Sign(hash []byte, key PrivKey) (Signature, error)
-
-Verifier
-Verifier : Verify(hash []byte, sig Signature, key PubKey) (bool, error)
-
-PubKey <|-- PrivKey
-PubKey : Address() string
-PubKey <|-- Generator
-PubKey <|-- Verifier
-PubKey <|-- SecretKeyPair
-
-PrivKey : PubKey() PubKey
-PrivKey <|-- Generator
-PrivKey <|-- Signer
-PrivKey <|-- SecretKeyPair
-
-Generator
-Generator : GenerateKey() (PrivKey, error)
-Generator : DeriveKey(pb PubKey) (PrivKey, error)
-
-
-SecretElement
-SecretElement <|-- LedgerDevice
-```
-
+- crypto/
+  - docs
+  - cipher/
+    - encryption
+    - decryption
+    - hashing
+  - signer/
+    - signature
+    - verifier
+  - keyring/
+    - secure_item
+    - secure_storage
+  - keys
+  - crypto_provider
+  - wallet
 
 **Flow overview**
 
@@ -482,13 +409,14 @@ The backward compatible sensitive elements are:
 
 ### Positive
 
-* Single place of truth.
-* Easier to use interfaces.
-* Easier to extend.
-* Maintainability.
-* Incentivize addition of implementations instead of forks.
-* Decoupling.
-* Sanitization of code.
+* Single place of truth
+* Easier to use interfaces
+* Easier to extend
+* Unit test for each crypto module
+* Greater maintainability
+* Incentivize addition of implementations instead of forks
+* Decoupling behaviour from implementation
+* Sanitization of code
 
 ### Negative
 
