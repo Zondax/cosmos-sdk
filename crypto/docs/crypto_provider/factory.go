@@ -5,6 +5,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/docs/secure_item"
 )
 
+type ProviderBuilder func(item secure_item.SecureItem) (CryptoProvider, error)
 type ProviderFactoryMap map[string]ProviderBuilder
 
 type CryptoProviderFactory struct {

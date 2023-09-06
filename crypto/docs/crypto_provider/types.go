@@ -30,5 +30,3 @@ type CryptoProvider interface {
 	GetHasher() (Hasher, error)
 	Wipe()
 }
-
-type ProviderBuilder func(item secure_item.SecureItem) (CryptoProvider, error)

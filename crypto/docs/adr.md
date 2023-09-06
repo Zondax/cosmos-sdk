@@ -45,7 +45,8 @@ These are the following reasons to use modules over packages:
 ```mermaid
 classDiagram
 
-Cypher <|-- CryptoProvider
+Keyring <|-- Wallet
+CryptoProvider <|-- Keyring
 Hasher <|-- CryptoProvider
 
 PubKey <|-- PrivKey
@@ -66,10 +67,12 @@ wallet --|> CryptoProvider
 
 #### Crypto provider
 
-A Crypto provider is the middleware object that handles the interaction with different instanced modules, A provider could be seen as a controller. 
+The *Crypto provider* serves as a middleware component responsible for managing the interaction with various instantiated cryptographic modules. It acts as a centralized controller, encapsulating the API of the crypto modules in a single location.
+Through the Crypto provider, users can access functionality such as signing, verification, encryption, and hashing.
 
-It is created through a factory / builder method which contains all the implementations of the required interfaces. It aims to encapsulate
-the api of the crypto modules in one place. 
+By abstracting the underlying cryptographic functionality, the *Crypto provider* enables a modular and extensible architecture. It allows users to easily switch between different cryptographic implementations without impacting the rest of the system.
+
+It is created through a factory / builder method which contains all the implementations of the required interfaces.
 
 ```mermaid
 classDiagram
@@ -78,69 +81,54 @@ Cypher <|-- CryptoProvider
 Keys <|-- CryptoProvider
 Signer <|-- CryptoProvider
 Verifier <|-- CryptoProvider
-
-KeyRing --|> CryptoProvider
-
-CryptoProvider : Build(item secure_item.SecureItem) (*CryptoProvider, error) // Builds the corresponding provider
-CryptoProvider : GetSigner() (signer.Signer, error)
-CryptoProvider : GetVerifier() (verifier.Verifier, error)
-CryptoProvider : GetGenerator() (keys.KeyGenerator, error)
-CryptoProvider : GetCipher() (cypher.Cypher, error)
-CryptoProvider : GetHasher() (Hasher, error)
-CryptoProvider : Wipe()
 ```
 
-#### **Keyring**
+```go
+type CryptoProvider interface {
+ CryptoProviderOptions 
+ Build(SecureItem) (*CryptoProvider, error)
 
-Keyring serves as a middleware between ledgers and the cosmos-sdk modules. It performs operations of storing, retrieving data 
-and allowing ledgers to perform operations such as signing and verifying.
-
-Keyring will get the information related to keys contained in a **secure item** through a **secure storage** object. Trough 
-keyring, Users can register their desired crypto providers to use and their respective storages implementations, It then 
-matches the UUID to the registered interfaces. Returning the specific provider for interacting with a key stored in a secure
-storage.
-
-```mermaid
-classDiagram
-
-SecuredStorage <|-- KeyRing
-
-SecuredStorage : Get(key string) (SecureItem, error)
-SecuredStorage : Set(key string, item SecureItem) error
-SecuredStorage : Delete(key string) error
-SecuredStorage : List() ([]string, error)
-
-SecureItem <|-- SecuredStorage
-SecureItem : Metadata SecureItemMetadata
-SecureItem :  Blob []byte
-SecureItemMetadata <|-- SecureItem
-
-Key <|-- SecureItem
-
-Wallet --|> KeyRing
-Wallet : Address()
-Wallet : Sign()
-Wallet : Verify()
-
-KeyRing : Init(ConfigLoader, KeyStore)
-KeyRing : RegisterProvider(string, cryptoprovider.ProviderBuilder)
-KeyRing : RegisterStorage(string, secure_storage.SecureStorageBuilder)
-KeyRing : NewMnemonic()
-KeyRing : NewAccount()
-KeyRing : Keys() ([]string, error)
-KeyRing : Delete(string) error
+ GetSigner() (signer. Signer, error)
+ GetVerifier() (verifier. Verifier, error)
+ GetCipher() (cypher.Cipher, error)
+ GetHasher() (Hasher, error)
+}
 ```
 
-##### SecureItem
+##### **SecureItem**
 
-A secure item consists of a specific Key instance registered on keyring. It also contains the metadata for interacting with the respective
-key. Such metadata could be encoding, encryption, etc.
+A *Secure Item* is a structured data object designed for storing any type of data within a *Secure Storage* instance. In the context of this ADR, the **Blob** field of a Secure Item represents a "recipe" or blueprint for constructing the corresponding *Crypto Provider*. The **Blob** can be encoded in any format and should contain all the necessary configuration information required to instantiate the specific cryptographic modules that compose the *Crypto Provider*.
+
+```go
+type SecureItemMetadata struct {
+	ModificationTime time.Time
+	UUID             string
+}
+```
+##### **Keyring**
+
+*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
+and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
+
+
+```go
+type Keyring interface {
+	RegisterCryptoProvider(string, ProviderBuilder)
+	RegisterSecureStorage(string, SecureStorageBuilder)
+
+	GetCryptoProvider(key string) (CryptoProvider, error)
+	Keys() ([]string, error)
+}
+```
 
 ##### SecureStorage
 
-A secures storage represents a vault where one or more **secure items** could be stored. In order to get a secure item, the user
-will have to interact with a secure storage before getting the secure item. Secure storage knows how and where to interact with
-in order to get the keys.
+A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys. 
+Different implementations of *Secure Storage* will be available to cater to various storage requirements:
+
+* FileSystem: This implementation stores the Secure Items in a designated folder within the file system.
+* Memory: This implementation stores the Secure Items in memory, providing fast access but limited persistence.
+* Keychain: This implementation is specific to macOS and utilizes the Keychain feature to securely store the Secure Items.
 
 ```go
 type SecureStorageSourceMetadata struct {
@@ -153,40 +141,44 @@ type SecureStorageSourceConfig struct {
     Config   any // specific config for the desired backend, if necessary
 }
 
-type SecureStorageBuilder func(SecureStorageSourceConfig) (SecureStorage, error)
-
 type SecureStorage interface {
-  // Build builds the corresponding secure storage backend
   Build(SecureStorageSourceConfig) (SecureStorage, error)
-  
-  // Get returns the SecureItem matching the key or ErrKeyNotFound
-  Get(string) (secure_item.SecureItem, error)
-  // GetMetadata returns the metadata field of the SecureItem
-  GetMetadata(string) (secure_item.SecureItemMetadata, error)
-  // Set stores the SecureItem on the backend
-  Set(string, secure_item.SecureItem) error
-  // Remove removes the SecureItem matching the key
+  Get(string) (SecureItem, error)
+  GetMetadata(string) (SecureItemMetadata, error)
+  Set(string, SecureItem) error
   Remove(string) error
-  // Keys returns a slice of all keys stored on the backend
   Keys() ([]string, error)
 }
 ```
 
 #### **Wallet**
 
-The wallet API contains the blockchain specific use cases of the crypto module. It is responsible for:
-- Signing and Verifying messages.
-- generating addresses out of keys
+The Wallet interface contains the blockchain specific use cases of the crypto module. It also serves as an API for:
+
+* Signing and Verifying messages.
+* Generating addresses out of keys
 
 Since wallet interacts with the user keys, it contains an instance of the Keyring, it is also where the blockchain specific
 logic should reside.
+
+```go
+type Wallet interface {
+	Init(Keyring)
+	GetSigner(address string) Signer
+	GetVerifier(address string) Verifier
+	Generate() string
+}
+```
+
+#### Additional components
 
 ##### Blob
 
 This is a wrapper for the widely used `[]byte` type that is used when handling binary data. Since crypto module handles sensitive information,
 the objective is to provide some extra security capabilities around such type as:
-- Zeroing values after a read operation.
-- Securely handling data.
+
+* Zeroing values after a read operation.
+* Securely handling data.
 
 These blob structures would be passed within components of the crypto module. For example: Signature information
 
@@ -303,7 +295,7 @@ type Decryptor interface {
 }
 ```
 
-#### Hasher
+##### Hasher
 
 This module contains the different hashing algorithms and conventions agreed on this matter. 
 
@@ -314,18 +306,10 @@ type Hasher interface {
 }
 ```
 
-#### Hasher
-
-This module contains the different hashing algorithms and conventions agreed on this matter.
-
-#### Codec
-
-This module will continue to register types and interfaces from the module according to the interface registry structure.
-
 #### Module structure
 
 Crypto module structure would look similar to this
-- codec
+
 - cipher
   - encryption
   - decryption
@@ -340,8 +324,9 @@ Crypto module structure would look similar to this
   - signer
   - verifier
 - wallet
-- types
 
+
+// Maybe delete this ?
 ### Overview of the whole design
 
 ```mermaid
@@ -418,15 +403,6 @@ SecretElement
 SecretElement <|-- LedgerDevice
 ```
 
-### Use cases
-
-In the following scenario the USER uses an external ledger to:
-
-1. Load stored ledger information, and using one of the keyringRecord which represents the specific LEDGER
-2. Encrypt a message trough CYPHER
-3. Generate an asymetric key trough GENERATOR
-4. Signing a message trough the SIGNER and the Private key
-5. Verifying a message trough the VERIFIER and the Public Key
 
 **Flow overview**
 
@@ -434,56 +410,46 @@ In the following scenario the USER uses an external ledger to:
 
 ```mermaid
 sequenceDiagram
+    participant Application
+    participant Wallet
     participant Keyring
-    participant ConfigLoader
+    participant CryptoProvider
     participant SecureStorage
-    
-    SecureStorage->>Keyring: RegisterStorageSource()
 
+    Application->> Wallet: New()
+    Wallet->>Keyring: New()
+      SecureStorage->>Keyring: RegisterStorageSource()
+      Keyring->>SecureStorage: Build()
+      CryptoProvider->>Keyring: RegisterCryptoProvider()
+      Keyring->>CryptoProvider: Build()
+    Keyring->>Wallet: Keyring Instance
+    Wallet->>Wallet: Init(Keyring)
+    Wallet->>Application: Wallet Instance
 ```
 
-
+***Signing and verifying a message***
 
 ```mermaid
 sequenceDiagram
+    participant Application
+    participant Wallet
     participant Keyring
-    participant KeyringRecord
     participant CryptoProvider
+    participant Signer
+    participant Verifier
 
-    Keyring->>Keyring: New()
-    Keyring->>KeyringRecord: GetRecords()
-    KeyringRecord->>KeyringRecord: Restore()
-    KeyringRecord->>Keyring: KeyringRecord Instance
-
-    Keyring->>KeyringRecord: EncryptMessage()
-    KeyringRecord->>CryptoProvider: GetCipher()
-    CryptoProvider->>KeyringRecord: cipher instance
-    KeyringRecord->>Cipher: Encrypt(message, secret)
-    Cipher->>Keyring: EncryptedMessage
-
-    Keyring->>KeyringRecord: NewKey()
-    KeyringRecord->>CryptoProvider: GetGenerator()
-    CryptoProvider->>Generator: new Key
-    Generator->>Keyring: Key
-
-    Keyring->>KeyringRecord: SignMessage()
-    KeyringRecord->>CryptoProvider: GetSigner()
-    CryptoProvider->>KeyringRecord: signer instance
-    KeyringRecord->>Signer: Sign(encryptedmessage, key)
-    Signer->PrivKey: Read()
-    PrivKey->Signer: Key bytes
-    PrivKey->PrivKey: Wipe -- zeroing
-    Signer->Signer: signMessage()
-    Signer->Keyring: Signature
-
-    Keyring->>KeyringRecord: VerifyMessage()
-    KeyringRecord->>CryptoProvider: GetVerifier()
-    CryptoProvider->>KeyringRecord: verifier instance
-    KeyringRecord->>Verifier: Verify(encryptedmessage, signature, key)
-    Verifier->PubKey: Read()
-    PubKey->Verifier: Key bytes
-    Verifier->Verifier: verifyMessage()
-    Verifier->Keyring: true/false
+    Application->>Wallet: GetSigner(address)
+    Wallet->>Keyring: GetCryptoProvider(key)
+    Keyring->>Wallet: CryptoProvider instance
+    Wallet->>CryptoProvider: GetSigner()
+    CryptoProvider->>Wallet: Signer instance
+    Application->>Signer: Sign()
+    Signer->>Application: Signed message
+    Application->>Wallet: GetVerifier(address)
+    Wallet->>CryptoProvider: GetVerifier()
+    CryptoProvider->>Wallet: Verifier instance
+    Application->>Verifier: Verify()
+    Verifier->>Application: true/false
 ```
 
 ## Alternatives
@@ -496,7 +462,7 @@ granularity.
 
 We will:
 
-* Refactor module structure as the images attached.
+* Refactor module structure as described above.
 * Define types and interfaces as the code attached.
 * Refactor existing code into new structure and interfaces.
 * Implement Unit Tests to ensure no backward compatibility issues.
