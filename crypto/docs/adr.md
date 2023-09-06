@@ -45,21 +45,23 @@ These are the following reasons to use modules over packages:
 ```mermaid
 classDiagram
 
+Cypher <|-- CryptoProvider
 Hasher <|-- CryptoProvider
-CryptoCypher <|-- CryptoProvider
-PubKey -- Verifier
 
 PubKey <|-- PrivKey
-PubKey <|-- Generator
+PubKey -- Verifier
 
-PrivKey <|-- Signer
-PrivKey <|-- Generator
-
-Signature <|-- Verifier
 Signature <|-- Signer
+Signature <|-- Verifier
+PrivKey -- Signer
 
-Signer <|-- CryptoProvider
 Verifier <|-- CryptoProvider
+Signer <|-- CryptoProvider  
+KeyRing -- CryptoProvider
+PrivKey <|-- KeyRing
+wallet --|> KeyRing
+wallet --|> CryptoProvider
+
 ```
 
 #### Crypto provider
