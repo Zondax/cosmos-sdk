@@ -11,10 +11,11 @@
 
 ## Abstract
 
-This proposal consists on a rework over crypto module to make it modular, easier to use and extensible. With the developer experience
-and latest best security practices on top of mind. The proposal defines a clear division of scope for each module and trough APIs
-to abstract users from details, allowing them to focus on what's important to them while handling all data across the module with 
-extra security measures.
+<<<<<<< HEAD
+This ADR proposes a refactor of the crypto module's structure and interfaces to improve modularity, re-usability, and maintainability. 
+With the developer experience and latest best security practices on top of mind. The proposal defines a clear division of scope for each
+module, cleaner interfaces, easier extension, better test coverage and a single place of truth, allowing them to focus on what's important
+to them while handling all data across the module with all the extra security measures to ensure proper handling of sensitive data.  
 
 ## Context
 
@@ -49,7 +50,11 @@ These are the following reasons to use modules over packages:
 classDiagram
 
 Keyring <|-- Wallet
-CryptoProvider <|-- Keyring
+
+SecureStorage <|-- Keyring
+SecureItem <|-- SecureStorage
+CryptoProvider <|-- SecureItem
+
 Hasher <|-- CryptoProvider
 
 PubKey <|-- PrivKey
@@ -65,7 +70,6 @@ KeyRing -- CryptoProvider
 PrivKey <|-- KeyRing
 wallet --|> KeyRing
 wallet --|> CryptoProvider
-
 ```
 
 #### Crypto provider
@@ -108,25 +112,10 @@ type SecureItemMetadata struct {
 	UUID             string
 }
 ```
-##### **Keyring**
-
-*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
-and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
-
-
-```go
-type Keyring interface {
-	RegisterCryptoProvider(string, ProviderBuilder)
-	RegisterSecureStorage(string, SecureStorageBuilder)
-
-	GetCryptoProvider(key string) (CryptoProvider, error)
-	Keys() ([]string, error)
-}
-```
 
 ##### SecureStorage
 
-A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys. 
+A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys.
 Different implementations of *Secure Storage* will be available to cater to various storage requirements:
 
 * FileSystem: This implementation stores the Secure Items in a designated folder within the file system.
@@ -151,6 +140,22 @@ type SecureStorage interface {
   Set(string, SecureItem) error
   Remove(string) error
   Keys() ([]string, error)
+}
+```
+
+##### **Keyring**
+
+*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
+and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
+
+
+```go
+type Keyring interface {
+	RegisterCryptoProvider(string, ProviderBuilder)
+	RegisterSecureStorage(string, SecureStorageBuilder)
+
+	GetCryptoProvider(key string) (CryptoProvider, error)
+	Keys() ([]string, error)
 }
 ```
 
@@ -313,20 +318,21 @@ type Hasher interface {
 
 Crypto module structure would look similar to this
 
-- cipher
-  - encryption
-  - decryption
-  - hashing
-- docs
-- keyring
-  - secureItem
-  - secureStorage
-- keys
-- provider
-- signature
-  - signer
-  - verifier
-- wallet
+- crypto/
+  - docs
+  - cipher/
+    - encryption
+    - decryption
+    - hashing
+  - signer/
+    - signature
+    - verifier
+  - keyring/
+    - secure_item
+    - secure_storage
+  - keys
+  - crypto_provider
+  - wallet
 
 **Flow overview**
 
@@ -406,13 +412,14 @@ The backward compatible sensitive elements are:
 
 ### Positive
 
-* Single place of truth.
-* Easier to use interfaces.
-* Easier to extend.
-* Maintainability.
-* Incentivize addition of implementations instead of forks.
-* Decoupling.
-* Sanitization of code.
+* Single place of truth
+* Easier to use interfaces
+* Easier to extend
+* Unit test for each crypto module
+* Greater maintainability
+* Incentivize addition of implementations instead of forks
+* Decoupling behaviour from implementation
+* Sanitization of code
 
 ### Negative
 
