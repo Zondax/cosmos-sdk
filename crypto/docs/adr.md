@@ -11,7 +11,10 @@
 
 ## Abstract
 
-TODO: Do this as the end
+This proposal consists on a rework over crypto module to make it modular, easier to use and extensible. With the developer experience
+and latest best security practices on top of mind. The proposal defines a clear division of scope for each module and trough APIs
+to abstract users from details, allowing them to focus on what's important to them while handling all data across the module with 
+extra security measures.
 
 ## Context
 
