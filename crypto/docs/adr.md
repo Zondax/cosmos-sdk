@@ -11,7 +11,6 @@
 
 ## Abstract
 
-<<<<<<< HEAD
 This ADR proposes a refactor of the crypto module's structure and interfaces to improve modularity, re-usability, and maintainability. 
 With the developer experience and latest best security practices on top of mind. The proposal defines a clear division of scope for each
 module, cleaner interfaces, easier extension, better test coverage and a single place of truth, allowing them to focus on what's important
