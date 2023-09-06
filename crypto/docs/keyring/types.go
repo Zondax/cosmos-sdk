@@ -5,10 +5,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/docs/secure_storage"
 )
 
-type ConfigLoader interface {
-	LoadConfig() (error, []secure_storage.SecureStorageSourceConfig)
-}
-
 type Keyring interface {
 	RegisterCryptoProvider(string, cryptoprovider.ProviderBuilder)
 	RegisterSecureStorage(string, secure_storage.SecureStorageBuilder)
