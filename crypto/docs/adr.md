@@ -25,25 +25,81 @@ to them while handling all data across the module with all the extra security me
 * Existing signing types outside of the crypto module may pose challenges to backward compatibility while striving for a clean interface.
 * Security implications must be considered during the module's redesign.
 
-### Proposed architecture
+### Objectives
 
-The architecture objectives that define our design are based on the following concepts:
+Modular Design Philosophy
 
-* **Modularity**: Users should be able to use only what they need instead of getting the whole module, keeping projects decoupled lightweight. 
-* **Simplicity**: The proposal follows a modular API architecture, abstracting complex behaviour and defining a clear interaction between modules.
-* **Extensibility**: Adding new features as key types, signing algorithms, etc. Has been made easier, in order to avoid forks and
-promote users to come up with their own implementations of the interfaces, which should instantly work with the rest of the module without
-modifications.
+* Establish a flexible and extensible foundation using interfaces to enable the seamless integration of various cryptographic methods and tools.
 
-### **Modules**
+* Restructure, Refactor, and Decouple: Update the cryptography module to ensure modularity and future adaptability.
 
-Modules aim to encapsulate behaviours and to provide simple interface to extend and reuse.
+Documentation & Community Engagement
 
-These are the following reasons to use modules over packages:
-- **Improved dependency management**: Modules have a built-in dependency management system that makes it easy to track and manage 
-  dependencies.
-- **Lightweight**: Users of the SDK could decide what modules to use, keeping simpler dependencies.
-- **Simplified development**: Extending a module with a reduced scope allows users to handle their own implementations easier. 
+* Cryptography v2 ADR: Draft a new Architecture Decision Record to guide and document the evolution of the module.
+
+* Enhance documentation to ensure clarity and promote community engagement, providing a platform for feedback and collaborative growth.
+
+Backward Compatibility & Migration
+
+* Prioritize compatibility with previous module versions to avoid disruptions for existing users.
+
+* Design and propose a suitable migration path, ensuring transitions are as seamless as possible.
+
+* Evaluate and decide on the relevance of existing systems and tools, incorporating or deprecating them based on their alignment with the module's new vision.
+
+Developer-Centric Approach
+
+* Prioritize clear, intuitive interfaces and best-practice design principles.
+* Improve Developer Experience: Provide tools, samples, and best practices to foster an efficient and user-friendly development environment.
+
+Leverage Extensibility
+
+* Utilize the module's modular design to support a wide range of cryptographic tools, key types, and methods, ensuring adaptability for future technological advancements.
+* Integrate support for advanced cryptographic features, ensuring the module's position at the forefront of cryptographic technologies.
+
+Quality Assurance
+
+* Enhanced Test Coverage: Improve testing methodologies to ensure the robustness and reliability of the module.
+* Conduct an Audit: After implementation, perform a comprehensive audit to identify potential vulnerabilities and ensure the module's security and stability.
+
+### Technical Goals
+
+Hardware Device & Cloud-based HSM Interface Design:
+
+* Design a foundational interface for various hardware devices (Ledger, YubiKey, Thales, etc.) and cloud-based HSMs (Amazon, Azure) to cater to both current and future implementations.
+
+TPM 2.0 Interface Consideration:
+
+* Integrate design considerations for Trusted Platform Module (TPM) 2.0 support to anticipate future enhancements.
+
+PKCS#11 Interface Blueprint:
+
+* Incorporate the Cryptographic Token Interface Standard (PKCS#11) into the design, ensuring seamless future interactions with cryptographic tokens.
+
+Plugin Architecture and Dependency Injection:
+
+* Establish the architectural foundation for an extensible plugin system and integrate a dependency injection framework, ensuring modularity, testability, and third-party integrations.
+
+Plugin Sandbox Environment Blueprint:
+
+* Design an environment for plugin testing, ensuring developers can validate integrations without compromising system integrity.
+
+Extensibility for Cryptographic Techniques:
+
+* Design the system with extensibility in mind to accommodate a broad spectrum of cryptographic techniques such as:
+* Various signature types
+* Different key types (elliptic curve, RSA, etc.)
+* Post-Quantum Cryptography (PQC) methods
+* Threshold signatures and encryption
+  Community Engagement Infrastructure:
+
+* Structure the design with tools and documentation interfaces in mind, enabling a seamless future rollout of resources for developer engagement.
+
+## Proposed architecture
+
+### **Packages**
+
+The following packages aim to encapsulate behaviours and to provide simple interfaces to extend and reuse.
 
 ```mermaid
 classDiagram
@@ -55,25 +111,21 @@ SecureItem <|-- SecureStorage
 CryptoProvider <|-- SecureItem
 
 Hasher <|-- CryptoProvider
+Verifier <|-- CryptoProvider
+Signer <|-- CryptoProvider
+Cypher <|-- CryptoProvider
+Generator <|-- CryptoProvider
 
 PubKey <|-- PrivKey
 PubKey -- Verifier
-
 Signature <|-- Signer
 Signature <|-- Verifier
 PrivKey -- Signer
-
-Verifier <|-- CryptoProvider
-Signer <|-- CryptoProvider  
-KeyRing -- CryptoProvider
-PrivKey <|-- KeyRing
-wallet --|> KeyRing
-wallet --|> CryptoProvider
 ```
 
 #### Crypto provider
 
-The *Crypto provider* serves as a middleware component responsible for managing the interaction with various instantiated cryptographic modules. It acts as a centralized controller, encapsulating the API of the crypto modules in a single location.
+The *Crypto provider* serves as a middleware component responsible for managing the interaction with various instantiated cryptographic packages. It acts as a centralized controller, encapsulating the API of the crypto modules in a single location.
 Through the Crypto provider, users can access functionality such as signing, verification, encryption, and hashing.
 
 By abstracting the underlying cryptographic functionality, the *Crypto provider* enables a modular and extensible architecture. It allows users to easily switch between different cryptographic implementations without impacting the rest of the system.
@@ -87,28 +139,50 @@ Cypher <|-- CryptoProvider
 Keys <|-- CryptoProvider
 Signer <|-- CryptoProvider
 Verifier <|-- CryptoProvider
+Cypher <|-- CryptoProvider
+Generator <|-- CryptoProvider
 ```
 
 ```go
-type CryptoProvider interface {
- CryptoProviderOptions 
- Build(SecureItem) (*CryptoProvider, error)
 
- GetSigner() (signer. Signer, error)
- GetVerifier() (verifier. Verifier, error)
- GetCipher() (cypher.Cipher, error)
- GetHasher() (Hasher, error)
+type CryptoProviderBuilder func(SecureItem) (CryptoProvider, error)
+
+type ProviderBasicOptions interface {
+  CanProvidePubKey() bool
+  CanProvidePrivateKey() bool
+  CanExport() bool
+  CanSign() bool
+  CanVerify() bool
+  CanCipher() bool
+  CanGenerate() bool
+}
+
+type CryptoProvider interface {
+  ProviderBasicOptions 
+  
+  GetBuilder() CryptoProviderBuilder
+  GetUUID() string
+  
+  GetSigner() (Signer, error)
+  GetVerifier() (Verifier, error)
+  GetCipher() (Cipher, error)
+  GetHasher() (Hasher, error)
+  GetGenerator() (Generator, error)
 }
 ```
 
 ##### **SecureItem**
 
-A *Secure Item* is a structured data object designed for storing any type of data within a *Secure Storage* instance. In the context of this ADR, the **Blob** field of a Secure Item represents a "recipe" or blueprint for constructing the corresponding *Crypto Provider*. The **Blob** can be encoded in any format and should contain all the necessary configuration information required to instantiate the specific cryptographic modules that compose the *Crypto Provider*.
+A *Secure Item* is a structured data object designed for storing any type of data within a *Secure Storage* instance.
+In the context of this ADR, the **Blob** field of a Secure Item represents a "recipe" or blueprint for constructing the corresponding *Crypto Provider*.
+The **Blob** can be encoded in any format and should contain all the necessary configuration information required to instantiate the specific
+cryptographic packages that compose the *Crypto Provider*.
 
 ```go
 type SecureItemMetadata struct {
 	ModificationTime time.Time
 	UUID             string
+	Name             string
 }
 ```
 
@@ -133,12 +207,12 @@ type SecureStorageSourceConfig struct {
 }
 
 type SecureStorage interface {
-  Build(SecureStorageSourceConfig) (SecureStorage, error)
+  NewSecureStorage(SecureStorageSourceConfig) (SecureStorage, error)
   Get(string) (SecureItem, error)
   GetMetadata(string) (SecureItemMetadata, error)
   Set(string, SecureItem) error
   Remove(string) error
-  Keys() ([]string, error)
+  Items() ([]SecureItemMetadata, error)
 }
 ```
 
@@ -383,7 +457,7 @@ sequenceDiagram
 
 ## Alternatives
 
-The alternatives may vary in the way of distributing the modules, putting some modules together as for example verify and signing in 
+The alternatives may vary in the way of distributing the packages, grouping them together as for example verify and signing in 
 one place. This will affect the granularity of the code, thus the reusability and modularity. We aim to balance between simplicity and 
 granularity.
 
