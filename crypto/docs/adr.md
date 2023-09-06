@@ -26,9 +26,11 @@ TODO: Do this as the end
 
 The architecture objectives that define our design are based on the following concepts:
 
-* **Modularity**: Users should be able to use only what they need independently
-* **Extensibility**: Adding or modifying a module should be easy
-* **Simplicity**: Users should be able to use/interacts confidently with components trough minimal requirements and interactions.
+* **Modularity**: Users should be able to use only what they need instead of getting the whole module, keeping projects decoupled lightweight. 
+* **Simplicity**: The proposal follows a modular API architecture, abstracting complex behaviour and defining a clear interaction between modules.
+* **Extensibility**: Adding new features as key types, signing algorithms, etc. Has been made easier, in order to avoid forks and
+promote users to come up with their own implementations of the interfaces, which should instantly work with the rest of the module without
+modifications.
 
 ### **Modules**
 
@@ -68,20 +70,21 @@ A Crypto provider is the middleware object that handles the interaction with dif
 It is created through a factory / builder method which contains all the implementations of the required interfaces. It aims to encapsulate
 the api of the crypto modules in one place. 
 
+```mermaid
+classDiagram
+Hasher <|-- CryptoProvider
+Cypher <|-- CryptoProvider
+Keys <|-- CryptoProvider
+Signer <|-- CryptoProvider
+Verifier <|-- CryptoProvider
+
+KeyRing --|> CryptoProvider
+```
+
 ```go
-TODO: Capabilities/ Options? @Eze
-CanProvidePubKey() bool
- CanProvidePrivKey() bool
- Consign() bool
- CanVerify() bool
- CanCipher() bool
- CanGenerate() bool
-
-
 type CryptoProvider interface {
  GetSigner() (signer. Signer, error)
  GetVerifier() (verifier. Verifier, error)
- GetGenerator() (keys.KeyGenerator, error)
  GetCipher() (cypher.Cipher, error)
  GetHasher() (Hasher, error)
 }
@@ -96,6 +99,24 @@ Keyring will get the information related to keys contained in a **secure item** 
 keyring, Users can register their desired crypto providers to use and their respective storages implementations, It then 
 matches the UUID to the registered interfaces. Returning the specific provider for interacting with a key stored in a secure
 storage.
+
+```mermaid
+classDiagram
+
+SecuredStorage <|-- KeyRing
+
+SecuredStorage : Get(key string) (SecureItem, error)
+SecuredStorage : Set(key string, item SecureItem) error
+SecuredStorage : Delete(key string) error
+SecuredStorage : List() ([]string, error)
+
+SecureItem <|-- SecuredStorage
+SecureItemMetadata <|-- SecureItem
+
+Key <|-- SecureItem
+
+Wallet --|> KeyRing
+```
 
 ##### SecureItem
 
@@ -160,6 +181,16 @@ These blob structures would be passed within components of the crypto module. Fo
 
 A key object is responsible for containing the **BLOB** key information. Keys might not be passed through functions and it is 
 suggested to interact through crypto providers to limit the exposure to vulnerabilities. 
+
+```mermaid
+classDiagram
+  PubKey <|-- PrivKey
+  PubKey : Address() string
+  PubKey : Key 
+
+  PrivKey : PubKey() PubKey
+  PrivKey : key
+```
 
 Base Key struct
 
@@ -477,6 +508,8 @@ The backward compatible sensitive elements are:
 * Easier to extend.
 * Maintainability.
 * Incentivize addition of implementations instead of forks.
+* Decoupling.
+* Sanitization of code.
 
 ### Negative
 
@@ -487,6 +520,12 @@ The backward compatible sensitive elements are:
 
 * It will involve extensive testing.
 
+## Test Cases
+
+- The code will be unit tested to ensure a high code coverage
+- There should be integration tests around Wallet, keyring and crypto providers.
+- There should be benchmark tests for hashing, keyring, encryption, decryption, signing and verifying functions.
+
 ## Further Discussions
 
 > While an ADR is in the DRAFT or PROPOSED stage, this section should contain a
@@ -496,10 +535,6 @@ The backward compatible sensitive elements are:
 > Later, this section can optionally list ideas or improvements the author or
 > reviewers found during the analysis of this ADR.
 
-## Test Cases [optional]
-
-Test cases for an implementation are mandatory for ADRs that are affecting consensus
-changes. Other ADRs can choose to include links to test cases if applicable.
 
 ## References
 
