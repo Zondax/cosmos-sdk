@@ -21,7 +21,7 @@ type ProviderOptions interface {
 type CryptoProvider interface {
 	ProviderOptions
 
-	Build(item secure_item.SecureItem) (*CryptoProvider, error) // Builds the corresponding provider
+	Build(item secure_item.SecureItem) (CryptoProvider, error) // Builds the corresponding provider
 
 	GetSigner() (signer.Signer, error)
 	GetVerifier() (verifier.Verifier, error)

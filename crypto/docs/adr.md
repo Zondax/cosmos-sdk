@@ -130,8 +130,6 @@ Through the Crypto provider, users can access functionality such as signing, ver
 
 By abstracting the underlying cryptographic functionality, the *Crypto provider* enables a modular and extensible architecture. It allows users to easily switch between different cryptographic implementations without impacting the rest of the system.
 
-It is created through a factory / builder method which contains all the implementations of the required interfaces.
-
 ```mermaid
 classDiagram
 Hasher <|-- CryptoProvider
@@ -179,10 +177,21 @@ The **Blob** can be encoded in any format and should contain all the necessary c
 cryptographic packages that compose the *Crypto Provider*.
 
 ```go
+type ItemId struct {
+  UUID string // UUID of the SecureItem
+  Type string // Backend type Ledger/Yubikey/FS
+  Slot string // Token identifier Yubikey's slot number / Ledger's HD path
+}
+
 type SecureItemMetadata struct {
-	ModificationTime time.Time
-	UUID             string
-	Name             string
+  ModificationTime time.Time
+  ItemId           ItemId
+}
+
+type SecureItem struct {
+  Metadata SecureItemMetadata
+  // Blob format/encoding will be dependant of the CryptoProvider implementation
+  Blob []byte
 }
 ```
 
@@ -208,10 +217,10 @@ type SecureStorageSourceConfig struct {
 
 type SecureStorage interface {
   NewSecureStorage(SecureStorageSourceConfig) (SecureStorage, error)
-  Get(string) (SecureItem, error)
-  GetMetadata(string) (SecureItemMetadata, error)
-  Set(string, SecureItem) error
-  Remove(string) error
+  Get(uuid string) (SecureItem, error)
+  GetMetadata(uuid string) (SecureItemMetadata, error)
+  Set(SecureItem) error
+  Remove(uuid string) error
   Items() ([]SecureItemMetadata, error)
 }
 ```
@@ -224,11 +233,11 @@ and *Secure Storage* implementations. The **RegisterCryptoProvider** function al
 
 ```go
 type Keyring interface {
-	RegisterCryptoProvider(string, ProviderBuilder)
-	RegisterSecureStorage(string, SecureStorageBuilder)
+	RegisterCryptoProviderBuilder(uuid string, builder ProviderBuilder)
+	RegisterSecureStorageBuilder(uuid string, builder SecureStorageBuilder)
 
-	GetCryptoProvider(key string) (CryptoProvider, error)
-	Keys() ([]string, error)
+	GetCryptoProvider(ItemId) (CryptoProvider, error)
+	List() ([]ItemId, error)
 }
 ```
 
@@ -317,7 +326,7 @@ type PrivKey interface {
 #### Signatures
 
 A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer 
-trough their public key.
+through their public key.
 
 ```go
 type Signature struct {
@@ -421,11 +430,20 @@ sequenceDiagram
 
     Application->> Wallet: New()
     Wallet->>Keyring: New()
-      SecureStorage->>Keyring: RegisterStorageSource()
-      Keyring->>SecureStorage: Build()
-      CryptoProvider->>Keyring: RegisterCryptoProvider()
-      Keyring->>CryptoProvider: Build()
-    Keyring->>Wallet: Keyring Instance
+      loop For every CryptoProvider
+        CryptoProvider->>CryptoProvider: GetUUID()
+        CryptoProvider->>CryptoProvider: GetBuilderFunction()
+        CryptoProvider->>Keyring: RegisterCryptoProvider(UUID, BuilderFunction)
+      end
+      
+      loop For every StorageSource
+        SecureStorage->>Keyring: RegisterStorageSource()
+        Keyring->>SecureStorage: NewSecureStorage(SecureStorageSourceConfig)
+        SecureStorage->>Keyring: SecureStorage Instance
+        Keyring->>SecureStorage: List()
+        SecureStorage->>Keyring: SecureItemMetadata list
+      end
+        Keyring->>Wallet: Keyring Instance
     Wallet->>Wallet: Init(Keyring)
     Wallet->>Application: Wallet Instance
 ```
@@ -441,11 +459,15 @@ sequenceDiagram
     participant Signer
     participant Verifier
 
-    Application->>Wallet: GetSigner(address)
-    Wallet->>Keyring: GetCryptoProvider(key)
-    Keyring->>Wallet: CryptoProvider instance
+    Application->>Wallet: GetSigner(Address)
+    Wallet->>Keyring: GetCryptoProvider(ItemId)
+    Keyring->>SecureStorage: Get(ItemId.Uuid)
+    SecureStorage->>Keyring: SecureItem
+    Keyring->>Keyring: GetBuilderFunction(ItemId.Uuid)
+    Keyring->>CryptoProvider: Build(SecureItem)
+    CryptoProvider->>Wallet: CryptoProvider instance
     Wallet->>CryptoProvider: GetSigner()
-    CryptoProvider->>Wallet: Signer instance
+    CryptoProvider->>Application: Signer instance
     Application->>Signer: Sign()
     Signer->>Application: Signed message
     Application->>Wallet: GetVerifier(address)

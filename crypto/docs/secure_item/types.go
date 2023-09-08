@@ -2,9 +2,14 @@ package secure_item
 
 import "time"
 
+type ItemId struct {
+	UUID string
+	Slot string
+}
+
 type SecureItemMetadata struct {
 	ModificationTime time.Time
-	UUID             string
+	ItemId           ItemId
 }
 
 type SecureItem struct {

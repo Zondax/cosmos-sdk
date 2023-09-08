@@ -26,6 +26,6 @@ type SecureStorage interface {
 	Set(string, secure_item.SecureItem) error
 	// Remove removes the SecureItem matching the key
 	Remove(string) error
-	// Keys returns a slice of all keys stored on the backend
-	Keys() ([]string, error)
+	// List returns a slice of the metadata of all items stored on the backend
+	List() ([]secure_item.SecureItemMetadata, error)
 }
