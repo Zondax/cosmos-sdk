@@ -11,17 +11,12 @@
 
 ## Abstract
 
-TODO: Do this as the end
+This ADR proposes a refactor of the crypto module's structure and interfaces to improve modularity, re-usability, and maintainability. 
+With the developer experience and latest best security practices on top of mind. The proposal defines a clear division of scope for each
+module, cleaner interfaces, easier extension, better test coverage and a single place of truth, allowing them to focus on what's important
+to them while handling all data across the module with all the extra security measures to ensure proper handling of sensitive data.  
 
 ## Context
-
-TODO: Improve context
-
-> This section describes the forces at play, including technological, political,
-> social, and project local. These forces are probably in tension, and should be
-> called out as such. The language in this section is value-neutral. It is simply
-> describing facts. It should clearly explain the problem and motivation that the
-> proposal aims to resolve.
 
 * Currently, there is no ADR providing a comprehensive description of the cryptographic module in the Cosmos SDK.
 * There have been multiple requests for a more flexible and extensible approach to cryptography, address management, and more.
@@ -30,120 +25,267 @@ TODO: Improve context
 * Existing signing types outside of the crypto module may pose challenges to backward compatibility while striving for a clean interface.
 * Security implications must be considered during the module's redesign.
 
-### Proposed architecture
+### Objectives
 
-The architecture objectives that define our design are based on the following concepts:
+Modular Design Philosophy
 
-* **Modularity**: Users should be able to use only what they need independently
-* **Extensibility**: Adding or modifying a module should be easy
-* **Simplicity**: Users should be able to use/interacts confidently with components trough minimal requirements and interactions.
+* Establish a flexible and extensible foundation using interfaces to enable the seamless integration of various cryptographic methods and tools.
 
-### **Modules**
+* Restructure, Refactor, and Decouple: Update the cryptography module to ensure modularity and future adaptability.
 
-TODO: Module vs package
+Documentation & Community Engagement
 
-Modules aim to encapsulate behaviours and to provide simple interface to extend and reuse.
+* Cryptography v2 ADR: Draft a new Architecture Decision Record to guide and document the evolution of the module.
+
+* Enhance documentation to ensure clarity and promote community engagement, providing a platform for feedback and collaborative growth.
+
+Backward Compatibility & Migration
+
+* Prioritize compatibility with previous module versions to avoid disruptions for existing users.
+
+* Design and propose a suitable migration path, ensuring transitions are as seamless as possible.
+
+* Evaluate and decide on the relevance of existing systems and tools, incorporating or deprecating them based on their alignment with the module's new vision.
+
+Developer-Centric Approach
+
+* Prioritize clear, intuitive interfaces and best-practice design principles.
+* Improve Developer Experience: Provide tools, samples, and best practices to foster an efficient and user-friendly development environment.
+
+Leverage Extensibility
+
+* Utilize the module's modular design to support a wide range of cryptographic tools, key types, and methods, ensuring adaptability for future technological advancements.
+* Integrate support for advanced cryptographic features, ensuring the module's position at the forefront of cryptographic technologies.
+
+Quality Assurance
+
+* Enhanced Test Coverage: Improve testing methodologies to ensure the robustness and reliability of the module.
+* Conduct an Audit: After implementation, perform a comprehensive audit to identify potential vulnerabilities and ensure the module's security and stability.
+
+### Technical Goals
+
+Hardware Device & Cloud-based HSM Interface Design:
+
+* Design a foundational interface for various hardware devices (Ledger, YubiKey, Thales, etc.) and cloud-based HSMs (Amazon, Azure) to cater to both current and future implementations.
+
+TPM 2.0 Interface Consideration:
+
+* Integrate design considerations for Trusted Platform Module (TPM) 2.0 support to anticipate future enhancements.
+
+PKCS#11 Interface Blueprint:
+
+* Incorporate the Cryptographic Token Interface Standard (PKCS#11) into the design, ensuring seamless future interactions with cryptographic tokens.
+
+Plugin Architecture and Dependency Injection:
+
+* Establish the architectural foundation for an extensible plugin system and integrate a dependency injection framework, ensuring modularity, testability, and third-party integrations.
+
+Plugin Sandbox Environment Blueprint:
+
+* Design an environment for plugin testing, ensuring developers can validate integrations without compromising system integrity.
+
+Extensibility for Cryptographic Techniques:
+
+* Design the system with extensibility in mind to accommodate a broad spectrum of cryptographic techniques such as:
+* Various signature types
+* Different key types (elliptic curve, RSA, etc.)
+* Post-Quantum Cryptography (PQC) methods
+* Threshold signatures and encryption
+  Community Engagement Infrastructure:
+
+* Structure the design with tools and documentation interfaces in mind, enabling a seamless future rollout of resources for developer engagement.
+
+## Proposed architecture
+
+### **Packages**
+
+The following packages aim to encapsulate behaviours and to provide simple interfaces to extend and reuse.
 
 ```mermaid
 classDiagram
 
-```
+Keyring <|-- Wallet
 
-```mermaid
-classDiagram
+SecureStorage <|-- Keyring
+SecureItem <|-- SecureStorage
+CryptoProvider <|-- SecureItem
 
 Hasher <|-- CryptoProvider
-CryptoCypher <|-- CryptoProvider
-
-PubKey -- Verifier
+Verifier <|-- CryptoProvider
+Signer <|-- CryptoProvider
+Cypher <|-- CryptoProvider
+Generator <|-- CryptoProvider
 
 PubKey <|-- PrivKey
-PubKey <|-- Generator
-
-PrivKey <|-- Signer
-PrivKey <|-- Generator
-
-Signature <|-- Verifier
+PubKey -- Verifier
 Signature <|-- Signer
-
-Signer <|-- CryptoProvider
-Verifier <|-- CryptoProvider
+Signature <|-- Verifier
+PrivKey -- Signer
 ```
-
-#### Types
-
-Each module will have its own types to keep everything as isolated as possible, yet there are some basic types shared across all part of the crypto module itself.
-
-##### Blob
-
-This is a wrapper for the widely used `[]byte` array. Since crypto module handles sensitive information, the objective is to provide some extra security around such type Like Zeroing its values after a read operation.
 
 #### Crypto provider
 
-A Crypto provider is the middleware object that handles the interaction with different instanced modules, A provider could be seen as a controller.
+The *Crypto provider* serves as a middleware component responsible for managing the interaction with various instantiated cryptographic packages. It acts as a centralized controller, encapsulating the API of the crypto modules in a single location.
+Through the Crypto provider, users can access functionality such as signing, verification, encryption, and hashing.
+
+By abstracting the underlying cryptographic functionality, the *Crypto provider* enables a modular and extensible architecture. It allows users to easily switch between different cryptographic implementations without impacting the rest of the system.
+
+```mermaid
+classDiagram
+Hasher <|-- CryptoProvider
+Cypher <|-- CryptoProvider
+Keys <|-- CryptoProvider
+Signer <|-- CryptoProvider
+Verifier <|-- CryptoProvider
+Cypher <|-- CryptoProvider
+Generator <|-- CryptoProvider
+```
 
 ```go
-TODO: Capabilities/ Options? @Eze
-CanProvidePubKey() bool
- CanProvidePrivKey() bool
- Consign() bool
- CanVerify() bool
- CanCipher() bool
- CanGenerate() bool
 
+type CryptoProviderBuilder func(SecureItem) (CryptoProvider, error)
+
+type ProviderBasicOptions interface {
+  CanProvidePubKey() bool
+  CanProvidePrivateKey() bool
+  CanExport() bool
+  CanSign() bool
+  CanVerify() bool
+  CanCipher() bool
+  CanGenerate() bool
+}
 
 type CryptoProvider interface {
- GetSigner() (signer. Signer, error)
- GetVerifier() (verifier. Verifier, error)
- GetGenerator() (keys.KeyGenerator, error)
- GetCipher() (cypher.Cipher, error)
- GetHasher() (Hasher, error)
+  ProviderBasicOptions 
+  
+  GetBuilder() CryptoProviderBuilder
+  GetUUID() string
+  
+  GetSigner() (Signer, error)
+  GetVerifier() (Verifier, error)
+  GetCipher() (Cipher, error)
+  GetHasher() (Hasher, error)
+  GetGenerator() (Generator, error)
 }
 ```
 
-#### **Keyring**
+##### **SecureItem**
 
-Keyring serves as a middleware between ledgers and the cosmos-sdk modules. It performs operations of storing, retrieving data and allowing ledgers to perform operations such as signing and verifying.
-
-##### KeyringRecord
-
-A keyring record uses a crypto provider, and serves as a bridge between a specific ledger and the modules implementations, enabling ledgers to use the crypto module desired implementations, it should follow this interface:
+A *Secure Item* is a structured data object designed for storing any type of data within a *Secure Storage* instance.
+In the context of this ADR, the **Blob** field of a Secure Item represents a "recipe" or blueprint for constructing the corresponding *Crypto Provider*.
+The **Blob** can be encoded in any format and should contain all the necessary configuration information required to instantiate the specific
+cryptographic packages that compose the *Crypto Provider*.
 
 ```go
-// Equivalent to record?
-type KeyringRecord interface {
- CryptoProvider // ledger, localKP, remoteKP, etc.
+type ItemId struct {
+  UUID string // UUID of the SecureItem
+  Type string // Backend type Ledger/Yubikey/FS
+  Slot string // Token identifier Yubikey's slot number / Ledger's HD path
+}
 
- EncryptionProvider() // localKP, remoteKP, etc.
- Store() error
- Restore() error
+type SecureItemMetadata struct {
+  ModificationTime time.Time
+  ItemId           ItemId
+}
+
+type SecureItem struct {
+  Metadata SecureItemMetadata
+  // Blob format/encoding will be dependant of the CryptoProvider implementation
+  Blob []byte
 }
 ```
-
-Examples: Ledger nano, Trezos, remoteKeyProvider
-
-##### SecureItem
-
-* Metadata
 
 ##### SecureStorage
 
-* Metadata
+A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys.
+Different implementations of *Secure Storage* will be available to cater to various storage requirements:
 
-##### SecureElement
+* FileSystem: This implementation stores the Secure Items in a designated folder within the file system.
+* Memory: This implementation stores the Secure Items in memory, providing fast access but limited persistence.
+* Keychain: This implementation is specific to macOS and utilizes the Keychain feature to securely store the Secure Items.
 
-##### LedgerDevice
+```go
+type SecureStorageSourceMetadata struct {
+    Type string
+    Name string
+}
+
+type SecureStorageSourceConfig struct {
+    Metadata SecureStorageSourceMetadata
+    Config   any // specific config for the desired backend, if necessary
+}
+
+type SecureStorage interface {
+  NewSecureStorage(SecureStorageSourceConfig) (SecureStorage, error)
+  Get(uuid string) (SecureItem, error)
+  GetMetadata(uuid string) (SecureItemMetadata, error)
+  Set(SecureItem) error
+  Remove(uuid string) error
+  Items() ([]SecureItemMetadata, error)
+}
+```
+
+##### **Keyring**
+
+*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
+and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
+
+
+```go
+type Keyring interface {
+	RegisterCryptoProviderBuilder(uuid string, builder ProviderBuilder)
+	RegisterSecureStorageBuilder(uuid string, builder SecureStorageBuilder)
+
+	GetCryptoProvider(ItemId) (CryptoProvider, error)
+	List() ([]ItemId, error)
+}
+```
+
+#### **Wallet**
+
+The Wallet interface contains the blockchain specific use cases of the crypto module. It also serves as an API for:
+
+* Signing and Verifying messages.
+* Generating addresses out of keys
+
+Since wallet interacts with the user keys, it contains an instance of the Keyring, it is also where the blockchain specific
+logic should reside.
+
+```go
+type Wallet interface {
+	Init(Keyring)
+	GetSigner(address string) Signer
+	GetVerifier(address string) Verifier
+	Generate() string
+}
+```
+
+#### Additional components
+
+##### Blob
+
+This is a wrapper for the widely used `[]byte` type that is used when handling binary data. Since crypto module handles sensitive information,
+the objective is to provide some extra security capabilities around such type as:
+
+* Zeroing values after a read operation.
+* Securely handling data.
+
+These blob structures would be passed within components of the crypto module. For example: Signature information
 
 #### **Keys**
 
-A key object is responsible for containing the **BLOB** key information required and used in the following modules:
+A key object is responsible for containing the **BLOB** key information. Keys might not be passed through functions and it is 
+suggested to interact through crypto providers to limit the exposure to vulnerabilities. 
 
-* **Cipher**: Encrypt / Decrypt information
-* **Signer**: Generate a signature
-* **Verifier**: Verify signatures
-* Derive new keys
+```mermaid
+classDiagram
+  PubKey <|-- PrivKey
+  PubKey : Address() string
+  PubKey : Key 
 
-These Key objects contain the algorithms to generate keys.
+  PrivKey : PubKey() PubKey
+  PrivKey : key
+```
 
 Base Key struct
 
@@ -169,7 +311,6 @@ The generator module is responsible for generating such keys.
 ```go
 type PubKey interface {
  BaseKey
- Address() []byte // Generates the address according to the defined types
 }
 ```
 
@@ -184,7 +325,8 @@ type PrivKey interface {
 
 #### Signatures
 
-A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer.
+A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer 
+through their public key.
 
 ```go
 type Signature struct {
@@ -194,7 +336,7 @@ type Signature struct {
 
 ##### Signer
 
-Interface responsible for Signing a message and returning the generated Signature.
+Interface responsible for Signing a message and returning the generated Signature. It is an algorithm tied to a family of keys. 
 
 ```go
 type Signer interface {
@@ -204,7 +346,7 @@ type Signer interface {
 
 ##### Verifier
 
-Verifies if given a message, it's signature belongs to said public key.
+Verifies if given a message belongs to a public key by validating against it's respective signature.
 
 ```go
 type Verifier interface {
@@ -214,7 +356,7 @@ type Verifier interface {
 
 #### Cipher
 
-A cipher is an algorithm focused for encryption and decryption of data. Given a message it should operate through a secret.
+A cipher is an api for encryption and decryption of data. Given a message it should operate through a secret.
 
 ```go
 type Cipher interface {
@@ -243,197 +385,109 @@ type Decryptor interface {
 }
 ```
 
-##### Example: xSalsaSymetric20
+##### Hasher
 
-Example of cipher xSalsaSymstric20 implementation. You will see that the new implementation is cleaner and tied to an interface, ensuring that the function will be reachable by the existing code.
-
-**Original:**
-
-```go
-func EncryptSymmetric(plaintext, secret []byte) (ciphertext []byte) {
- if len(secret) != secretLen {}
- ...
-    Return ciphertext
-}
-
-func DecryptSymmetric(ciphertext, secret []byte) (plaintext []byte, err error) {
- if len(secret) != secretLen {}
- ...
- return plaintext, nil
-}
-```
-
-**New**
-
-```go
-type SalsaCypher struct {
- Cypher
-}
-
-func (cypher SalsaCypher) Encrypt(message, secret) (Blob, err error) {
- if len(secret) != secretLen {}
- ...
- return nil, nil
-}
-
-func (cypher SalsaCypher) Decrypt(ciphertext, secret) (Blob, err error) {
- if len(secret) != secretLen {}
- ..
- return plaintext, nil
-}
-```
-
-#### Hasher
-
-Hashing functions should be placed in this module. Trough the following interface.
+This module contains the different hashing algorithms and conventions agreed on this matter. 
 
 ```go
 type Hasher interface {
  Hash(input Blob) Blob
-
  CanHashIncrementally() bool
 }
 ```
 
-### Overview of the whole design
+#### Module structure
 
-```mermaid
-classDiagram
+Crypto module structure would look similar to this
 
-SecureItem <|-- SecuredStorage
-SecureItemMetadata <|-- SecureItem
-
-SecuredStorage : Get(key string) (SecureItem, error)
-SecuredStorage : Set(key string, item SecureItem) error
-SecuredStorage : Delete(key string) error
-SecuredStorage : List() ([]string, error)
-
-CryptoCypher <|-- CryptoProvider
-Hasher <|-- CryptoProvider
-Signer <|-- CryptoProvider
-Verifier <|-- CryptoProvider
-CryptoProvider <|-- SecretElement
-CryptoProvider <|-- SecretKeyPair
-CryptoProvider <|-- SecureElement
-CryptoProvider : GetCypher() (CryptoCypher, error)
-CryptoProvider : GetHasher() (Hasher, error)
-CryptoProvider : GetRandom() (Random, error)
-CryptoProvider : GetRandomBytes(size int) ([]byte, error)
-
-Hasher : Hash() ([]byte, error)
-Hasher : HashString() (string, error)
-
-SecureItem  <|-- CryptoCypher
-CryptoCypher : Encrypt(data Blob) (Blob, error)
-CryptoCypher : Decrypt(data Blob) (Blob, error)
-
-Blob <|-- Digest
-Blob <|-- SecureItem
-Blob <|-- Hasher
-Blob <|-- CryptoCypher
-Blob : Bytes()
-Blob : ReadBlob() ([]byte, error)
-Blob : Wipe()
-
-
-BaseKey <|-- PubKey
-BaseKey <|-- PrivKey
-BaseKey : String() string
-BaseKey : Bytes() []byte
-
-Signature <|-- Verifier
-Signature <|-- Signer
-Signature : Bytes() []byte
-
-Signer
-Signer : Sign(hash []byte, key PrivKey) (Signature, error)
-
-Verifier
-Verifier : Verify(hash []byte, sig Signature, key PubKey) (bool, error)
-
-PubKey <|-- PrivKey
-PubKey : Address() string
-PubKey <|-- Generator
-PubKey <|-- Verifier
-PubKey <|-- SecretKeyPair
-
-PrivKey : PubKey() PubKey
-PrivKey <|-- Generator
-PrivKey <|-- Signer
-PrivKey <|-- SecretKeyPair
-
-Generator
-Generator : GenerateKey() (PrivKey, error)
-Generator : DeriveKey(pb PubKey) (PrivKey, error)
-
-
-SecretElement
-SecretElement <|-- LedgerDevice
-```
-
-### Example
-
-In the following scenario the USER uses an external ledger to:
-
-1. Load stored ledger information, and using one of the keyringRecord which represents the specific LEDGER
-2. Encrypt a message trough CYPHER
-3. Generate an asymetric key trough GENERATOR
-4. Signing a message trough the SIGNER and the Private key
-5. Verifying a message trough the VERIFIER and the Public Key
+- crypto/
+  - docs
+  - cipher/
+    - encryption
+    - decryption
+    - hashing
+  - signer/
+    - signature
+    - verifier
+  - keyring/
+    - secure_item
+    - secure_storage
+  - keys
+  - crypto_provider
+  - wallet
 
 **Flow overview**
 
+***Initialization***
+
 ```mermaid
 sequenceDiagram
+    participant Application
+    participant Wallet
     participant Keyring
-    participant KeyringRecord
     participant CryptoProvider
+    participant SecureStorage
 
-    Keyring->>Keyring: New()
-    Keyring->>KeyringRecord: GetRecords()
-    KeyringRecord->>KeyringRecord: Restore()
-    KeyringRecord->>Keyring: KeyringRecord Instance
+    Application->> Wallet: New()
+    Wallet->>Keyring: New()
+      loop For every CryptoProvider
+        CryptoProvider->>CryptoProvider: GetUUID()
+        CryptoProvider->>CryptoProvider: GetBuilderFunction()
+        CryptoProvider->>Keyring: RegisterCryptoProvider(UUID, BuilderFunction)
+      end
+      
+      loop For every StorageSource
+        SecureStorage->>Keyring: RegisterStorageSource()
+        Keyring->>SecureStorage: NewSecureStorage(SecureStorageSourceConfig)
+        SecureStorage->>Keyring: SecureStorage Instance
+        Keyring->>SecureStorage: List()
+        SecureStorage->>Keyring: SecureItemMetadata list
+      end
+        Keyring->>Wallet: Keyring Instance
+    Wallet->>Wallet: Init(Keyring)
+    Wallet->>Application: Wallet Instance
+```
 
-    Keyring->>KeyringRecord: EncryptMessage()
-    KeyringRecord->>CryptoProvider: GetCipher()
-    CryptoProvider->>KeyringRecord: cipher instance
-    KeyringRecord->>Cipher: Encrypt(message, secret)
-    Cipher->>Keyring: EncryptedMessage
+***Signing and verifying a message***
 
-    Keyring->>KeyringRecord: NewKey()
-    KeyringRecord->>CryptoProvider: GetGenerator()
-    CryptoProvider->>Generator: new Key
-    Generator->>Keyring: Key
+```mermaid
+sequenceDiagram
+    participant Application
+    participant Wallet
+    participant Keyring
+    participant CryptoProvider
+    participant Signer
+    participant Verifier
 
-    Keyring->>KeyringRecord: SignMessage()
-    KeyringRecord->>CryptoProvider: GetSigner()
-    CryptoProvider->>KeyringRecord: signer instance
-    KeyringRecord->>Signer: Sign(encryptedmessage, key)
-    Signer->PrivKey: Read()
-    PrivKey->Signer: Key bytes
-    PrivKey->PrivKey: Wipe -- zeroing
-    Signer->Signer: signMessage()
-    Signer->Keyring: Signature
-
-    Keyring->>KeyringRecord: VerifyMessage()
-    KeyringRecord->>CryptoProvider: GetVerifier()
-    CryptoProvider->>KeyringRecord: verifier instance
-    KeyringRecord->>Verifier: Verify(encryptedmessage, signature, key)
-    Verifier->PubKey: Read()
-    PubKey->Verifier: Key bytes
-    Verifier->Verifier: verifyMessage()
-    Verifier->Keyring: true/false
+    Application->>Wallet: GetSigner(Address)
+    Wallet->>Keyring: GetCryptoProvider(ItemId)
+    Keyring->>SecureStorage: Get(ItemId.Uuid)
+    SecureStorage->>Keyring: SecureItem
+    Keyring->>Keyring: GetBuilderFunction(ItemId.Uuid)
+    Keyring->>CryptoProvider: Build(SecureItem)
+    CryptoProvider->>Wallet: CryptoProvider instance
+    Wallet->>CryptoProvider: GetSigner()
+    CryptoProvider->>Application: Signer instance
+    Application->>Signer: Sign()
+    Signer->>Application: Signed message
+    Application->>Wallet: GetVerifier(address)
+    Wallet->>CryptoProvider: GetVerifier()
+    CryptoProvider->>Wallet: Verifier instance
+    Application->>Verifier: Verify()
+    Verifier->>Application: true/false
 ```
 
 ## Alternatives
 
-The alternatives may vary in the way of distributing the modules, putting some modules together as for example verify and signing in one place. This will affect the granularity of the code, thus the reusability and modularity. We aim to balance between simplicity and granularity.
+The alternatives may vary in the way of distributing the packages, grouping them together as for example verify and signing in 
+one place. This will affect the granularity of the code, thus the reusability and modularity. We aim to balance between simplicity and 
+granularity.
 
 ## Decision
 
 We will:
 
-* Refactor module structure as the images attached.
+* Refactor module structure as described above.
 * Define types and interfaces as the code attached.
 * Refactor existing code into new structure and interfaces.
 * Implement Unit Tests to ensure no backward compatibility issues.
@@ -441,11 +495,6 @@ We will:
 ## Consequences
 
 ### Backwards Compatibility
-
-> All ADRs that introduce backwards incompatibilities must include a section
-> describing these incompatibilities and their severity. The ADR must explain
-> how the author proposes to deal with these incompatibilities. ADR's submissions
-> without a sufficient backwards compatibility treatise may be rejected outright.
 
 This refactor will involve changes on how the module is structured, providing cleaner interfaces and easier ways to use and extend. The impact should be minimal and not breaking any previous generated data.
 
@@ -458,11 +507,14 @@ The backward compatible sensitive elements are:
 
 ### Positive
 
-* Single place of truth.
-* Easier to use interfaces.
-* Easier to extend.
-* Maintainability.
-* Incentivize addition of implementations instead of forks.
+* Single place of truth
+* Easier to use interfaces
+* Easier to extend
+* Unit test for each crypto module
+* Greater maintainability
+* Incentivize addition of implementations instead of forks
+* Decoupling behaviour from implementation
+* Sanitization of code
 
 ### Negative
 
@@ -473,6 +525,12 @@ The backward compatible sensitive elements are:
 
 * It will involve extensive testing.
 
+## Test Cases
+
+- The code will be unit tested to ensure a high code coverage
+- There should be integration tests around Wallet, keyring and crypto providers.
+- There should be benchmark tests for hashing, keyring, encryption, decryption, signing and verifying functions.
+
 ## Further Discussions
 
 > While an ADR is in the DRAFT or PROPOSED stage, this section should contain a
@@ -482,10 +540,6 @@ The backward compatible sensitive elements are:
 > Later, this section can optionally list ideas or improvements the author or
 > reviewers found during the analysis of this ADR.
 
-## Test Cases [optional]
-
-Test cases for an implementation are mandatory for ADRs that are affecting consensus
-changes. Other ADRs can choose to include links to test cases if applicable.
 
 ## References
 
