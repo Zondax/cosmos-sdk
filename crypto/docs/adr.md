@@ -9,12 +9,22 @@
 
 {DRAFT | PROPOSED} Not Implemented
 
+### Glossary
+
+1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
+
+2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
+
+3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
+
+
 ## Abstract
 
-This ADR proposes a refactor of the crypto module's structure and interfaces to improve modularity, re-usability, and maintainability. 
-With the developer experience and latest best security practices on top of mind. The proposal defines a clear division of scope for each
-module, cleaner interfaces, easier extension, better test coverage and a single place of truth, allowing them to focus on what's important
-to them while handling all data across the module with all the extra security measures to ensure proper handling of sensitive data.  
+This ADR proposes a refactor of the crypto module to enhance modularity, reusability, and maintainability,
+while prioritizing developer experience and incorporating best security practices.
+The proposal defines a clear division of scope for each component, cleaner interfaces, easier extension,
+better test coverage and a single place of truth, allowing the developer to focus on what's important
+while ensuring the secure handling of sensitive data throughout the module.  
 
 ## Context
 
@@ -24,14 +34,6 @@ to them while handling all data across the module with all the extra security me
 * Similar efforts have been undertaken in the past concerning runtime modules.
 * Existing signing types outside of the crypto module may pose challenges to backward compatibility while striving for a clean interface.
 * Security implications must be considered during the module's redesign.
-
-### Glossary 
-
-1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
-
-2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
-
-3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
 
 ### Objectives
 
@@ -43,7 +45,7 @@ Modular Design Philosophy
 
 Documentation & Community Engagement
 
-* Cryptography v2 ADR: Draft a new Architecture Decision Record to guide and document the evolution of the module.
+* Cryptography v2 ADR: Draft a new Architecture Decision Record to guide and document the evolution of the module (this document).
 
 * Enhance documentation to ensure clarity and promote community engagement, providing a platform for feedback and collaborative growth.
 
