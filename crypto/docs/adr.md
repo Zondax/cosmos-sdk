@@ -107,9 +107,9 @@ Extensibility for Cryptographic Techniques:
 
 ## Proposed architecture
 
-### **Packages**
+### **Interfaces**
 
-The following packages aim to encapsulate behaviours and to provide simple interfaces to extend and reuse.
+The following interfaces aim to encapsulate behaviors and provide a simple and extensible foundation for reuse.
 
 ```mermaid
 classDiagram
