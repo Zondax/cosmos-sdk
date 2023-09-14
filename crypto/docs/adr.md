@@ -25,6 +25,14 @@ to them while handling all data across the module with all the extra security me
 * Existing signing types outside of the crypto module may pose challenges to backward compatibility while striving for a clean interface.
 * Security implications must be considered during the module's redesign.
 
+### Glossary 
+
+1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
+
+2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
+
+3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
+
 ### Objectives
 
 Modular Design Philosophy
