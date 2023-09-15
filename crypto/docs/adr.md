@@ -218,7 +218,7 @@ Different implementations of *Secure Storage* will be available to cater to vari
 
 * FileSystem: This implementation stores the Secure Items in a designated folder within the file system.
 * Memory: This implementation stores the Secure Items in memory, providing fast access but limited persistence.
-* Keychain: This implementation is specific to macOS and utilizes the Keychain feature to securely store the Secure Items.
+* KMS: This implementation utilizes the Key Management System available on popular operating systems such as Linux, macOS, and Windows
 
 ```go
 type SecureStorageSourceMetadata struct {
@@ -243,8 +243,8 @@ type SecureStorage interface {
 
 ##### **Keyring**
 
-*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Provider*
-and *Secure Storage* implementations. The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing a unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
+*Keyring* serves as a central hub for managing *Crypto Providers* and *Secure Storage* implementations. It provides methods to register *Crypto Providers* and *Secure Storage* implementations.
+The **RegisterCryptoProvider** function allows users to register a Crypto Provider blueprint by providing its unique identifier and a builder function. Similarly, the **RegisterSecureStorage** function enables users to register a secure storage implementation by specifying a unique identifier and a builder function.
 
 
 ```go
@@ -264,8 +264,9 @@ The Wallet interface contains the blockchain specific use cases of the crypto mo
 * Signing and Verifying messages.
 * Generating addresses out of keys
 
-Since wallet interacts with the user keys, it contains an instance of the Keyring, it is also where the blockchain specific
-logic should reside.
+Since wallet interacts with the user keys, it contains an instance of the Keyring, it is also where the blockchain specific logic should reside.
+
+Note: Each Wallet implementation should provide the logic to map addresses and ItemIds
 
 ```go
 type Wallet interface {
@@ -278,10 +279,9 @@ type Wallet interface {
 
 #### Additional components
 
-##### Blob
+##### **Blob**
 
-This is a wrapper for the widely used `[]byte` type that is used when handling binary data. Since crypto module handles sensitive information,
-the objective is to provide some extra security capabilities around such type as:
+This is a wrapper for the widely used `[]byte` type that is used when handling binary data. Since crypto module handles sensitive information, the objective is to provide some extra security capabilities around such type as:
 
 * Zeroing values after a read operation.
 * Securely handling data.
@@ -341,8 +341,7 @@ type PrivKey interface {
 
 #### Signatures
 
-A signature consists of a message/hash signed by one or multiple private keys. The main objective is to Authenticate a message signer 
-through their public key.
+A signature consists of a message/hash signed by one or multiple private keys. The main objective is to authenticate a message signer through their public key.
 
 ```go
 type Signature struct {
@@ -352,7 +351,7 @@ type Signature struct {
 
 ##### Signer
 
-Interface responsible for Signing a message and returning the generated Signature. It is an algorithm tied to a family of keys. 
+Interface responsible for Signing a message and returning the generated Signature.
 
 ```go
 type Signer interface {
@@ -370,7 +369,7 @@ type Verifier interface {
 }
 ```
 
-#### Cipher
+##### Cipher
 
 A cipher is an api for encryption and decryption of data. Given a message it should operate through a secret.
 
