@@ -47,17 +47,17 @@ Modular Design Philosophy
 
 * Establish a flexible and extensible foundation using interfaces to enable the seamless integration of various cryptographic methods and tools.
 
-* Restructure, Refactor, and Decouple: Update the cryptography module to ensure modularity and future adaptability.
+* Restructure, Refactor, and Decouple: Update the cryptography codebase to ensure modularity and future adaptability.
 
 Documentation & Community Engagement
 
 * Cryptography v2 ADR: Draft a new Architecture Decision Record to guide and document the evolution of the module (this document).
 
-* Enhance documentation to ensure clarity and promote community engagement, providing a platform for feedback and collaborative growth.
+* Enhance documentation to ensure clarity, establish a good practices protocol and promote community engagement, providing a platform for feedback and collaborative growth.
 
 Backward Compatibility & Migration
 
-* Prioritize compatibility with previous module versions to avoid disruptions for existing users.
+* Prioritize compatibility with previous module version to avoid disruptions for existing users.
 
 * Design and propose a suitable migration path, ensuring transitions are as seamless as possible.
 
