@@ -26,6 +26,12 @@ The proposal defines a clear division of scope for each component, cleaner inter
 better test coverage and a single place of truth, allowing the developer to focus on what's important
 while ensuring the secure handling of sensitive data throughout the module.  
 
+This ADR introduces enhancements and deprecates the proposals outlined in the ["Keyring ADR"](https://github.com/cosmos/cosmos-sdk/issues/14940). It is important to note that the Keyring ADR will be replaced with a significantly more flexible approach such as this document describes.
+
+Furthermore, the grpc service proposed in the Keyring ADR can be easily implemented by creating an implementation of the "CryptoProvider" interface defined in this ADR. This allows for the integration of HashiCorp plugins over gRPC, providing a robust and extensible solution for keyring functionality.
+
+By deprecating the previous ADR and introducing these enhancements, the new ADR offers a more comprehensive and adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
+
 ## Context
 
 * Currently, there is no ADR providing a comprehensive description of the cryptographic module in the Cosmos SDK.
