@@ -153,6 +153,7 @@ Cypher <|-- CryptoProvider
 Keys <|-- CryptoProvider
 Signer <|-- CryptoProvider
 Verifier <|-- CryptoProvider
+Cypher <|-- CryptoProvider
 Generator <|-- CryptoProvider
 ```
 
