@@ -1,0 +1,10 @@
+syntax = "proto3";
+package cryptoImpl.provider.localSecp256k1;
+
+option go_package = "/storage/secureItem";
+
+message SecureItem{
+  string name = 1;
+  bytes typeUuid = 2;
+  bytes blob = 3;
+}
