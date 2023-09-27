@@ -492,14 +492,20 @@ We will:
 
 ### Backwards Compatibility
 
-This refactor will involve changes on how the module is structured, providing cleaner interfaces and easier ways to use and extend. The impact should be minimal and not breaking any previous generated data.
+Some packages will need a medium to heavy refactor to be compatible with this ADR. 
+In short, every package that uses the current sdk's version of _Keyring_ will need to be adapted to use the new Keyring and CryptoProvider interfaces.
+Other special cases where a refactor will be needed, are the ones that make use crypto components in isolation like the  _PrivateKey_ and _PublicKey_ structs
+to sign and verify transactions respectively.
 
-The backward compatible sensitive elements are:
-
-* Keys
-* Signatures
-* Encrypted data
-* Hashes
+As first approach, the most affected packages are:
+- crypto/types
+- client/rpc
+- client/tx
+- types/tx/signing
+- x/auth
+- x/auth/client
+- x/slashing
+- simapp/simd
 
 ### Positive
 
