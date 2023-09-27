@@ -501,6 +501,7 @@ As first approach, the most affected packages are:
 - crypto/types
 - client/rpc
 - client/tx
+- client/keys
 - types/tx/signing
 - x/auth
 - x/auth/client
