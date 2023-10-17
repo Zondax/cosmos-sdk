@@ -9,9 +9,35 @@
 
 DRAFT
 
+### Glossary 
+// TODO: make sure these words are used as described here in the rest of the document
+
+1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
+
+2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
+
+3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
+
 ## Abstract
 
 TODO: This should be a summary of the whole document.
+
+This ADR proposes a refactor of the crypto module to enhance modularity, re-usability, and maintainability,
+while prioritizing developer experience and incorporating best security practices.
+The proposal defines a clear division of scope for each component, cleaner interfaces, easier extension,
+better test coverage and a single place of truth, allowing the developer to focus on what's important
+while ensuring the secure handling of sensitive data throughout the module.
+
+This ADR introduces enhancements and deprecates the proposals outlined in the ["Keyring ADR"](https://github.com/cosmos/cosmos-sdk/issues/14940).
+It is important to note that the Keyring ADR will be replaced with a significantly more flexible approach such as this
+document describes.
+
+Furthermore, the grpc service proposed in the Keyring ADR can be easily implemented by creating an implementation of the
+"CryptoProvider" interface defined in this ADR. This allows for the integration of HashiCorp plugins over gRPC,
+providing a robust and extensible solution for keyring functionality.
+
+By deprecating the previous ADR and introducing these enhancements, the new ADR offers a more comprehensive and
+adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
 
 ## Introduction
 
@@ -244,7 +270,7 @@ The **RegisterCryptoProvider** function allows users to register a Crypto Provid
 type IKeyring interface {
   // TODO: review
   RegisterCryptoProvider(typeUUID TypeUUID, builder CryptoProviderBuilder)
-  RegisterStorageProvider(typeUUID TypeUUID, provider StorageProvider)
+  RegisterAndLoadStorageProvider(typeUUID TypeUUID, provider StorageProvider)
 
   ListStorageProviders() ([]IStorageProvider, error)
   ListCryptoProviders() ([]ICryptoProvider, error)
