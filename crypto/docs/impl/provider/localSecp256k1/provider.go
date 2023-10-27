@@ -1,12 +1,12 @@
 package localSecp256k1
 
 import (
-	"cryptoImpl/crypto/provider"
+	"cryptoImpl/provider"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
-const uuid = "localSecp256k1"
+const Secp256k1 = "localSecp256k1"
 
 func (x *LocalSecp256K1) Sign(hash []byte) ([]byte, error) {
 	sk := secp256k1.PrivKeyFromBytes(x.PrivKey)
@@ -26,8 +26,12 @@ func (x *LocalSecp256K1) Verify(hash []byte, signature []byte) (bool, error) {
 	return sig.Verify(hash, pk), nil
 }
 
+func (x *LocalSecp256K1) GetMetadata() provider.ICryptoProviderMetadata {
+	return x
+}
+
 func (x *LocalSecp256K1) GetTypeUUID() string {
-	return uuid
+	return Secp256k1
 }
 
 func (x *LocalSecp256K1) GetKeys() ([]byte, []byte, error) {

@@ -1,37 +1,66 @@
 package storage
 
-type ISecureItemMetadata interface {
-	Type() string // creates typeUUid   // Relates to the corresponding crypto
-	Name() string
+import (
+	"fmt"
+	"time"
+)
+
+type ItemId struct {
+	Type string
+	UUID string
+	Slot string
+}
+
+func (t ItemId) Name() string {
+	return fmt.Sprintf("%s_%s", t.UUID, t.Slot)
+}
+
+type SecureItemMetadata struct {
+	ModificationTime time.Time
+	ItemId           ItemId
 }
 
 type ISecureItem interface {
-	ISecureItemMetadata
+	Metadata() SecureItemMetadata
 
 	// Blob format/encoding will be dependant of the CryptoProvider implementation
 	Bytes() []byte
 }
 
 type SecureItem struct {
-	TypeUuid string
-	NameId   string
-	Blob     []byte
+	Meta SecureItemMetadata
+	// Blob format/encoding will be dependant of the CryptoProvider implementation
+	Blob []byte
 }
 
-func NewSecureItem(uuid, name string, blob []byte) *SecureItem {
+func NewSecureItem(itemId ItemId, blob []byte) *SecureItem {
+	if itemId.UUID == "" {
+		fmt.Println("Error: UUID cannot be empty")
+		return nil
+	}
 	return &SecureItem{
-		TypeUuid: uuid,
-		NameId:   name,
-		Blob:     blob,
+		Meta: SecureItemMetadata{
+			ModificationTime: time.Now().Round(time.Millisecond),
+			ItemId:           itemId,
+		},
+		Blob: blob,
 	}
 }
 
-func (s SecureItem) Type() string {
-	return s.TypeUuid
+func (s SecureItem) Metadata() SecureItemMetadata {
+	return s.Meta
 }
 
-func (s SecureItem) Name() string {
-	return s.NameId
+func (s SecureItem) UUID() string {
+	return s.Meta.ItemId.UUID
+}
+
+func (s SecureItem) Slot() string {
+	return s.Meta.ItemId.Slot
+}
+
+func (s SecureItem) Type() string {
+	return s.Meta.ItemId.Type
 }
 
 func (s SecureItem) Bytes() []byte {

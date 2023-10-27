@@ -2,47 +2,63 @@ package main
 
 import (
 	"crypto/rand"
-	"cryptoImpl/crypto/provider/localSecp256k1"
 	"cryptoImpl/keyring"
-	"cryptoImpl/storage"
+	"cryptoImpl/provider/localSecp256k1"
+	storage2 "cryptoImpl/storage"
+	storage "cryptoImpl/storage/filesystem"
 	"fmt"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"os"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
+	// TODO: keyring should a global var or singleton
 	k := keyring.New()
-	k.RegisterCryptoProvider(localSecp256k1.Secp256k1Builder)
-	lfs := storage.NewLFSystem("testing", os.TempDir()+"mainADR")
+
+	// Register CryptoProviderBuilder(s)
+	k.RegisterCryptoProviderBuilder(localSecp256k1.Secp256k1Builder)
+
+	// Register StorageProvider(s)
+	lfs := storage.NewFileSystemStorageProvider("testing", os.TempDir()+"keyring")
 	k.RegisterStorageProvider(lfs)
 
-	privKeyBytes := [32]byte{}
-	r := rand.Reader
-	_, err := io.ReadFull(r, privKeyBytes[:])
+	// Let's create a new SecureItem
+	item1 := createDummySecureItem("myLocalSecpKey1")
+	item2 := createDummySecureItem("myLocalSecpKey2")
+
+	err := lfs.Set(item1)
 	if err != nil {
 		panic(err)
 	}
 
-	proc, err := localSecp256k1.Secp256k1Builder.FromSeed(privKeyBytes[:])
-	if err != nil {
-		panic(err)
-	}
-	procMar, err := proto.Marshal(proc)
+	err = lfs.Set(item2)
 	if err != nil {
 		panic(err)
 	}
 
-	si := storage.NewSecureItem(proc.GetTypeUUID(), "myKey", procMar)
-	err = lfs.Set(si)
+	fmt.Println("List of items in FileSystemProvider:")
+	list := lfs.List()
+	for _, v := range list {
+		fmt.Println(v)
+	}
+
+	fmt.Println("List of items in Keyring:")
+	ids, err := k.List()
+	if err != nil {
+		panic(err)
+	}
+	for _, v := range ids {
+		fmt.Println(v)
+	}
+
+	myKey, err := k.GetCryptoProvider("myLocalSecpKey1_0")
 	if err != nil {
 		panic(err)
 	}
 
-	myKey, err := k.GetCryptoProvider("myKey")
-	if err != nil {
-		panic(err)
-	}
+	fmt.Println(myKey.GetKeys())
 
 	signer, err := myKey.GetSigner()
 	if err != nil {
@@ -63,5 +79,32 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	fmt.Println(ok)
+}
+
+func createDummySecureItem(name string) *storage2.SecureItem {
+	privKeyBytes := [32]byte{}
+	r := rand.Reader
+	_, err := io.ReadFull(r, privKeyBytes[:])
+	if err != nil {
+		panic(err)
+	}
+
+	proc, err := localSecp256k1.Secp256k1Builder.FromSeed(privKeyBytes[:])
+	if err != nil {
+		panic(err)
+	}
+	procMar, err := proto.Marshal(proc)
+	if err != nil {
+		panic(err)
+	}
+
+	si := storage2.NewSecureItem(storage2.ItemId{
+		Type: localSecp256k1.Secp256k1,
+		UUID: name,
+		Slot: "0",
+	}, procMar)
+
+	return si
 }

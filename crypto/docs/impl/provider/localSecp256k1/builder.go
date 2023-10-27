@@ -2,24 +2,21 @@ package localSecp256k1
 
 import (
 	"bytes"
-	"cryptoImpl/crypto/provider"
+	"cryptoImpl/provider"
 	"cryptoImpl/storage"
 	"errors"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"google.golang.org/protobuf/proto"
 )
 
-var Secp256k1Builder = Builder{}
+var Secp256k1Builder = Builder{Secp256k1}
 
-type Builder struct{}
-
-func (b Builder) GetTypeUUID() string {
-	return uuid
+type Builder struct {
+	uuid string
 }
 
-func (b Builder) GetName() string {
-	//TODO why this here?
-	return ""
+func (b Builder) GetBuilderTypeUUID() string {
+	return b.uuid
 }
 
 func (b Builder) FromSecureItem(item storage.ISecureItem) (provider.ICryptoProvider, error) {

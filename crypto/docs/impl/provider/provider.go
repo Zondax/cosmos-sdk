@@ -7,11 +7,10 @@ import (
 type ICryptoProviderMetadata interface {
 	GetTypeUUID() string
 	GetName() string
-	//GetMetadata() []ProviderMetadata
 }
 
 type ICryptoProvider interface {
-	ICryptoProviderMetadata
+	GetMetadata() ICryptoProviderMetadata
 	ProtoReflect() protoreflect.Message
 
 	GetKeys() ([]byte, []byte, error)
@@ -24,6 +23,7 @@ type ICryptoProvider interface {
 type ISigner interface {
 	Sign([]byte) ([]byte, error)
 }
+
 type IVerifier interface {
 	Verify([]byte, []byte) (bool, error)
 }

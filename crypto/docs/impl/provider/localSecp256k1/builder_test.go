@@ -2,7 +2,7 @@ package localSecp256k1
 
 import (
 	"crypto/rand"
-	"cryptoImpl/crypto/provider"
+	"cryptoImpl/provider"
 	"io"
 	"testing"
 )
