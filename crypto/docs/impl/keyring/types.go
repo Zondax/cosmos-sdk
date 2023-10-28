@@ -1,20 +1,16 @@
 package keyring
 
 import (
-	provider2 "cryptoImpl/provider"
-	"cryptoImpl/storage"
+	provider2 "cryptoV2/provider"
+	"cryptoV2/storage"
 )
 
 type IKeyring interface {
 	RegisterCryptoProviderBuilder(builder provider2.ICryptoProviderBuilder)
 	RegisterStorageProvider(provider storage.IStorageProvider)
 
-	ListStorageProviders() error
-	ListCryptoProviders() error
-
-	AddCryptoProvider()
-
 	ListItems() ([]storage.SecureItemMetadata, error)
 
+	AddCryptoProvider() // TODO
 	GetCryptoProvider(string) (provider2.ICryptoProvider, error)
 }

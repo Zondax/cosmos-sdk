@@ -1,10 +1,17 @@
 package keyring
 
 import (
-	provider2 "cryptoImpl/provider"
-	"cryptoImpl/storage"
+	provider2 "cryptoV2/provider"
+	"cryptoV2/storage"
 	"fmt"
+	"sync"
+
 	"go.uber.org/zap"
+)
+
+var (
+	instance *Keyring
+	once     sync.Once
 )
 
 type Keyring struct {
@@ -13,12 +20,16 @@ type Keyring struct {
 	buffer map[string]map[string]storage.ItemId // map[providerName]map[SecureItemName]ItemId
 }
 
-func New() *Keyring {
-	return &Keyring{
-		cp:     make(map[string]provider2.ICryptoProviderBuilder),
-		sp:     make(map[string]storage.IStorageProvider),
-		buffer: make(map[string]map[string]storage.ItemId),
-	}
+func GetInstance() *Keyring {
+	once.Do(func() {
+		instance = &Keyring{
+			cp:     make(map[string]provider2.ICryptoProviderBuilder),
+			sp:     make(map[string]storage.IStorageProvider),
+			buffer: make(map[string]map[string]storage.ItemId),
+		}
+	})
+
+	return instance
 }
 
 func (k *Keyring) RegisterCryptoProviderBuilder(builder provider2.ICryptoProviderBuilder) {
@@ -29,13 +40,17 @@ func (k *Keyring) RegisterCryptoProviderBuilder(builder provider2.ICryptoProvide
 
 func (k *Keyring) RegisterStorageProvider(provider storage.IStorageProvider) {
 	k.sp[provider.Name()] = provider
-	k.syncProviderWithBuffer(provider)
+	err := k.syncProviderWithBuffer(provider)
+	if err != nil {
+		zap.S().Errorf("Error while syncing provider %s with buffer: %s", provider.Name(), err.Error())
+		return
+	}
 }
 
 func (k *Keyring) ListStorageProviders() error {
 	fmt.Println("Registered storage providers:")
 	for _, v := range k.sp {
-		fmt.Println("- Provider: ", v.Name())
+		fmt.Println(fmt.Sprintf("- Provider: %s - %s", v.Name(), v.Type()))
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-module cryptoImpl
+module cryptoV2
 
 go 1.20
 

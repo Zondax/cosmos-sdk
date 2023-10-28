@@ -1,7 +1,7 @@
 package localSecp256k1
 
 import (
-	"cryptoImpl/provider"
+	"cryptoV2/provider"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )

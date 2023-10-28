@@ -1,6 +1,6 @@
 package provider
 
-import "cryptoImpl/storage"
+import "cryptoV2/storage"
 
 type ICryptoProviderBuilder interface {
 	GetBuilderTypeUUID() string

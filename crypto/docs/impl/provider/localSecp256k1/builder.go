@@ -2,8 +2,8 @@ package localSecp256k1
 
 import (
 	"bytes"
-	"cryptoImpl/provider"
-	"cryptoImpl/storage"
+	"cryptoV2/provider"
+	"cryptoV2/storage"
 	"errors"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"google.golang.org/protobuf/proto"

@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"cryptoImpl/storage"
+	"cryptoV2/storage"
 	"encoding/json"
 	"fmt"
 	"go.uber.org/zap"
@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+const providerFileSystem = "filesystem"
 
 type FileSystemProvider struct {
 	name string
@@ -31,6 +33,10 @@ func NewFileSystemStorageProvider(name, path string) *FileSystemProvider {
 
 func (fsp *FileSystemProvider) Name() string {
 	return fsp.name
+}
+
+func (fsp *FileSystemProvider) Type() string {
+	return providerFileSystem
 }
 
 func (fsp *FileSystemProvider) List() []storage.ItemId {

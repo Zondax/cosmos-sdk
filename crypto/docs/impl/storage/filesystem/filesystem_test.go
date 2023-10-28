@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"cryptoImpl/storage"
+	"cryptoV2/storage"
 	"os"
 	"reflect"
 	"testing"
@@ -25,7 +25,7 @@ func TestFileSystemProvider(t *testing.T) {
 		t.Errorf("Set() error = %v", err)
 	}
 
-	gotItem, err := provider.Get(item.Metadata.ItemId)
+	gotItem, err := provider.Get(item.Metadata().ItemId)
 	if err != nil {
 		t.Errorf("Get() error = %v", err)
 	}
@@ -40,7 +40,7 @@ func TestFileSystemProvider(t *testing.T) {
 	}
 
 	// Test Remove
-	err = provider.Remove(item.Metadata.ItemId)
+	err = provider.Remove(item.Metadata().ItemId)
 	if err != nil {
 		t.Errorf("Remove() error = %v", err)
 	}
