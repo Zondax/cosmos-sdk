@@ -4,10 +4,11 @@ import (
 	"cryptoV2/storage"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 const providerFileSystem = "filesystem"
