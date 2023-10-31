@@ -8,7 +8,7 @@ import (
 
 const Secp256k1 = "localSecp256k1"
 
-func (x *LocalSecp256K1) Sign(hash []byte) ([]byte, error) {
+func (x *LocalSecp256K1) Sign(hash []byte, options ...provider.SignerOption) ([]byte, error) {
 	sk := secp256k1.PrivKeyFromBytes(x.PrivKey)
 	sig := ecdsa.Sign(sk, hash)
 	return sig.Serialize(), nil
