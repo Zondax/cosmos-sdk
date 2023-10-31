@@ -23,8 +23,8 @@ func IntegrationTest(t *testing.T) {
 	cli.Execute()
 
 	// Let's create a new SecureItem
-	item1 := cli.CreateDummySecureItem("myLocalSecpKey1")
-	item2 := cli.CreateDummySecureItem("myLocalSecpKey2")
+	item1 := cli.CreateDummyCryptoProvider("myLocalSecpKey1")
+	item2 := cli.CreateDummyCryptoProvider("myLocalSecpKey2")
 
 	err := lfs.Set(item1)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	provider2 "cryptoV2/provider"
 	"cryptoV2/storage"
 	"fmt"
+	"google.golang.org/protobuf/proto"
 	"sync"
 
 	"go.uber.org/zap"
@@ -91,7 +92,23 @@ func (k *Keyring) GetCryptoProvider(name string) (provider2.ICryptoProvider, err
 	return nil, fmt.Errorf("no crypto provider found with name: %s", name)
 }
 
-func (k *Keyring) List() ([]storage.SecureItemMetadata, error) {
+func (k *Keyring) AddCryptoProvider(provider provider2.ICryptoProvider) error {
+	m, err := proto.Marshal(provider)
+	if err != nil {
+		return err
+	}
+
+	meta := provider.GetMetadata()
+	storage.NewSecureItem(storage.ItemId{
+		Type: meta.GetType(),
+		UUID: meta.GetName(),
+		Slot: meta.GetSlot(),
+	}, m)
+
+	return nil
+}
+
+func (k *Keyring) ListCryptoProviders() ([]storage.SecureItemMetadata, error) {
 	var metadataList []storage.SecureItemMetadata
 	for _, v := range k.sp {
 		items := v.List()

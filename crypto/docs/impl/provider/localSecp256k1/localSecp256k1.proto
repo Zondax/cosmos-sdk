@@ -5,6 +5,8 @@ option go_package = "/crypto/localSecp256k1";
 
 message LocalSecp256k1{
   string name = 1;
-  bytes PubKey = 2;
-  bytes PrivKey = 3;
+  string type = 2;
+  string slot = 3;
+  bytes PubKey = 4;
+  bytes PrivKey = 5;
 }

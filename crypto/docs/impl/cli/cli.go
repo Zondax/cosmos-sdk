@@ -3,14 +3,13 @@ package cli
 import (
 	"crypto/rand"
 	"cryptoV2/keyring"
+	"cryptoV2/provider"
 	"cryptoV2/provider/localSecp256k1"
-	"cryptoV2/storage"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/proto"
 )
 
 var rootCmd = &cobra.Command{
@@ -25,7 +24,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all items",
 	Run: func(cmd *cobra.Command, args []string) {
-		ids, err := keyring.GetInstance().List()
+		ids, err := keyring.GetInstance().ListCryptoProviders()
 		if err != nil {
 			panic(err)
 		}
@@ -70,7 +69,7 @@ func init() {
 	rootCmd.AddCommand(listCryptoProvidersCmd)
 }
 
-func CreateDummySecureItem(name string) *storage.SecureItem {
+func CreateDummyCryptoProvider(name string) provider.ICryptoProvider {
 	privKeyBytes := [32]byte{}
 	r := rand.Reader
 	_, err := io.ReadFull(r, privKeyBytes[:])
@@ -82,16 +81,6 @@ func CreateDummySecureItem(name string) *storage.SecureItem {
 	if err != nil {
 		panic(err)
 	}
-	procMar, err := proto.Marshal(proc)
-	if err != nil {
-		panic(err)
-	}
 
-	si := storage.NewSecureItem(storage.ItemId{
-		Type: localSecp256k1.Secp256k1,
-		UUID: name,
-		Slot: "0",
-	}, procMar)
-
-	return si
+	return proc
 }

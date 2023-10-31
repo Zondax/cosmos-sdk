@@ -30,10 +30,6 @@ func (x *LocalSecp256K1) GetMetadata() provider.ICryptoProviderMetadata {
 	return x
 }
 
-func (x *LocalSecp256K1) GetTypeUUID() string {
-	return Secp256k1
-}
-
 func (x *LocalSecp256K1) GetKeys() ([]byte, []byte, error) {
 	return x.PrivKey, x.PubKey, nil
 }

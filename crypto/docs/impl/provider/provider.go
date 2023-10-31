@@ -5,8 +5,9 @@ import (
 )
 
 type ICryptoProviderMetadata interface {
-	GetTypeUUID() string
+	GetType() string
 	GetName() string
+	GetSlot() string
 }
 
 type ICryptoProvider interface {
@@ -20,8 +21,21 @@ type ICryptoProvider interface {
 	GetHasher() (IHasher, error)
 }
 
+type SignerOption func(*SignerOptions)
+
+type SignerOptions struct {
+	options map[string]string
+}
+
+// This will be needed to select the desired signing modes in the sdk
+func WithOption(key, value string) SignerOption {
+	return func(signerOptions *SignerOptions) {
+		signerOptions.options[key] = value
+	}
+}
+
 type ISigner interface {
-	Sign([]byte) ([]byte, error)
+	Sign(data []byte, options ...SignerOption) ([]byte, error)
 }
 
 type IVerifier interface {

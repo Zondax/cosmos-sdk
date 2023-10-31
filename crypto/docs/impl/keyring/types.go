@@ -9,8 +9,7 @@ type IKeyring interface {
 	RegisterCryptoProviderBuilder(builder provider2.ICryptoProviderBuilder)
 	RegisterStorageProvider(provider storage.IStorageProvider)
 
-	ListItems() ([]storage.SecureItemMetadata, error)
-
-	AddCryptoProvider() // TODO
+	ListCryptoProviders() ([]storage.SecureItemMetadata, error)
+	AddCryptoProvider(provider2.ICryptoProvider) error
 	GetCryptoProvider(string) (provider2.ICryptoProvider, error)
 }
