@@ -621,14 +621,46 @@ OBJECTIVE
     https://docs.oasis-open.org/pkcs11/pkcs11-base/v3.0/os/pkcs11-base-v3.0-os.pdf
     https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-library.html
 
-- Developer Experience
-  - 
+## Developer Experience
 
-- Development
+### Development
 
-- Open problems
+### Open problems
 
+#### Patches 
 
+There are cases where different approaches / upgrades have been incorporated without doing the proper changes through the whole
+code base, resulting on multiple libraries that do the same thing slightly different, but if intendeed to fix this, it would involve
+a major effort. 
+
+Example:
+- Curently there are 2 versions of secp256k1 library at the same time
+  - dcred: Which should be deprecated, still being used to calculate some checks, like knowing if a point is in the curve
+  - secp256k1-voi: A new library that is constant time and is the one that should be used from now on.
+
+#### Code duplication
+
+There are pieces of code that do the same thing replicated over the whole sdk. It will make more difficult to migrate 
+since some of it is being used differently. Unifying this code enables developers to have one place of truth and also updating
+it safe.
+
+Examples:
+- Key generation: Seckp256k1 key generation is repeated in different parts instead of being used trough one place
+  - **crypto/hd/algo.go** contains a function that generates a private key with the received bytes. This function should be key agnostic, since multiple parts of the code depends on it.
+  - **crypto/hd/hdpath,go** it parses the key directly from dcrd library instead of passing through the cosmos package
+  - **ledger_mock.go** 
+
+#### Colateral damage
+
+Working with Keys and cryptography in general is sensitive, some changes that might seem small impact the project in some unpredictable ways.
+i.e: Seems like some parts of the project are using ed25519 keys which shouldn't be used yet, still, changing how the address are generated, break validators and the network
+Some of the affected areas are:
+- Network
+  - Validators
+  - Blocks
+  - Tx
+- Wallets
+- Keys
 
 ---------------------------------------
 
