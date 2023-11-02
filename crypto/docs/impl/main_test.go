@@ -51,9 +51,9 @@ func IntegrationTest(t *testing.T) {
 		fmt.Println(v)
 	}
 
-	myKey, err := k.GetCryptoProvider("myLocalSecpKey1_0")
+	myKey, err := k.Get("myLocalSecpKey1_0")
 	if err != nil {
-		t.Fatalf("GetCryptoProvider() error = %v", err)
+		t.Fatalf("Get() error = %v", err)
 	}
 
 	fmt.Println(myKey.GetKeys())

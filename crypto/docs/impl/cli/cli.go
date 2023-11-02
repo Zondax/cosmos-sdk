@@ -24,7 +24,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all items",
 	Run: func(cmd *cobra.Command, args []string) {
-		ids, err := keyring.GetInstance().ListCryptoProviders()
+		ids, err := keyring.GetInstance().List()
 		if err != nil {
 			panic(err)
 		}
