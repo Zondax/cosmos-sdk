@@ -48,3 +48,7 @@ func (b Builder) FromMnemonic(mnemonic string) (provider.ICryptoProvider, error)
 func (b Builder) FromString(url string) (provider.ICryptoProvider, error) {
 	return nil, errors.New("not implemented")
 }
+
+func (b Builder) FromHDPath(hdPath string, coinType uint32, index uint32, hrp string) (provider.ICryptoProvider, error) {
+	panic("implement me")
+}
