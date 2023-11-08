@@ -38,6 +38,13 @@ providing a robust and extensible solution for keyring functionality.
 By deprecating the previous ADR and introducing these enhancements, the new ADR offers a more comprehensive and
 adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
 
+### Glossary
+
+1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
+
+2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
+
+3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
 
 ## Context
 
@@ -504,14 +511,6 @@ As first approach, the most affected packages are:
 >
 > Later, this section can optionally list ideas or improvements the author or
 > reviewers found during the analysis of this ADR.
-
-### Glossary
-
-1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
-
-2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
-
-3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
 
 
 ## References
