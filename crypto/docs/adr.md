@@ -9,24 +9,13 @@
 
 DRAFT
 
-### Glossary 
-// TODO: make sure these words are used as described here in the rest of the document
-
-1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
-
-2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
-
-3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
-
 ## Abstract
 
-This ADR proposes a refactor of the crypto module within the Cosmos SDK. The primary objectives of this overhaul are to enhance modularity, improve reusability, and ensure maintainability while prioritizing an excellent developer experience and integrating best security practices. By clearly defining the scope of each component, refining interfaces, simplifying extensibility, and expanding test coverage, this proposal aims to provide a singular source of truth for developers. This will empower developers to focus on critical aspects while ensuring the secure management of sensitive data within the module.
-
-This ADR introduces several enhancements and, notably, deprecates the proposals outlined in the ["Keyring ADR."](https://github.com/cosmos/cosmos-sdk/issues/14940) It's important to emphasize that this new approach will supplant the Keyring ADR, offering a significantly more flexible solution.
-
-Moreover, the proposed refactor facilitates the implementation of the grpc service previously suggested in the Keyring ADR. This is achieved by creating an implementation of the "CryptoProvider" interface outlined in this ADR. This innovation enables HashiCorp plugins to be seamlessly integrated via gRPC, thereby delivering a robust and extensible solution for keyring functionality.
-
-By deprecating previous proposals and introducing these enhancements, the new ADR provides a more comprehensive and adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
+This ADR proposes a refactor of the crypto module to enhance modularity, re-usability, and maintainability,
+while prioritizing developer experience and incorporating best security practices.
+The proposal defines a clear division of scope for each component, cleaner interfaces, easier extension,
+better test coverage and a single place of truth, allowing the developer to focus on what's important
+while ensuring the secure handling of sensitive data throughout the module.
 
 ## Introduction
 
@@ -35,12 +24,27 @@ This ADR describes the redesign and refactoring of the crypto package:
 * modularity
 * security
 * extensibility
-* reusability and maintainability
+* usability and maintainability
 * developer experience
 
 The proposal determines a clear decoupling via interfaces, additional extension points, and a much more modular design to allow developers to application level aspects while ensuring the secure handling of sensitive data when applying this SDK.
 
 The enhancements in this proposal not only render the ["Keyring ADR"](https://github.com/cosmos/cosmos-sdk/issues/14940) obsolete, but also encompass its key aspects, replacing it with a more flexible and comprehensive approach. Furthermore, the gRPC service proposed in the Keyring ADR can be easily implemented as an specialized implementation of the "CryptoProvider" interface defined later in this ADR. This allows for the integration of HashiCorp-like plugins over gRPC, providing a robust and extensible solution for keyring functionality.
+
+Furthermore, the grpc service proposed in the Keyring ADR can be easily followed by creating an implementation of the
+"CryptoProvider" interface defined in this ADR. This allows for the integration of HashiCorp plugins over gRPC,
+providing a robust and extensible solution for keyring functionality.
+
+By deprecating the previous ADR and introducing these enhancements, the new ADR offers a more comprehensive and
+adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
+
+### Glossary
+
+1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
+
+2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
+
+3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
 
 ## Context
 
@@ -122,11 +126,27 @@ Community Engagement Infrastructure:
 
 ### Introduction
 
-TODO: Introduction
+In the proposed architecture, each package is decoupled and isolated. Adding new implementations consist of implementing the required interfaces.
+
+```mermaid
+classDiagram
+
+Keyring <|-- Wallet
+
+SecureStorage <|-- Keyring
+SecureItem <|-- SecureStorage
+CryptoProvider <|-- SecureItem
+
+Hasher <|-- CryptoProvider
+Verifier <|-- CryptoProvider
+Signer <|-- CryptoProvider
+Cipher <|-- CryptoProvider
+Generator <|-- CryptoProvider
+```
 
 ### Crypto Provider
 
-*Crypto Providers* serve as a middleware interface responsible for managing the interaction with various instantiated cryptographic packages. It acts as a centralized controller, encapsulating the API of the crypto modules in a single location.
+*Crypto Providers* serve as a middleware responsible for managing the interaction with various instantiated cryptographic packages. It acts as a centralized controller, encapsulating the API of the crypto modules in a single location.
 Through each Crypto provider, users can access functionality such as signing, verification, encryption, and hashing.
 
 By abstracting the underlying cryptographic functionality, *Crypto providers* enable a modular and extensible architecture. It allows users to easily switch between different cryptographic implementations without impacting the rest of the system.
@@ -166,21 +186,19 @@ type ICryptoProvider interface {
 }
 ```
 
-TODO: Make clear that we are planning to use self-references
-
 #### Signing
 
-TODO: explain that sometimes it is not possible to both sign and verify
-
 Interface responsible for Signing a message and returning the generated Signature.
-
-Verifies if given a message belongs to a public key by validating against it's respective signature.
 
 ```go
 type ISigner interface {
   Sign(Blob) (Signature, error)
 }
 ```
+
+#### Verifier
+
+Verifies if given a message belongs to a public key by validating against it's respective signature.
 
 ```go
 type IVerifier interface {
@@ -201,7 +219,7 @@ type ICipher interface {
 
 #### Hasher
 
-This module contains the different hashing algorithms and conventions agreed on this matter.
+This package contains the different hashing algorithms and conventions agreed on this matter.
 
 ```go
 type IHasher interface {
@@ -212,7 +230,7 @@ type IHasher interface {
 
 ### StorageProvider
 
-TODO: intro
+
 A *Secure Storage* represents a secure vault where one or more *Secure Items* can be stored. It serves as a centralized repository for securely storing sensitive data. To access a *Secure Item*, users must interact with the *Secure Storage*, which handles the retrieval and management of keys.
 Different implementations of *Secure Storage* will be available to cater to various storage requirements:
 
@@ -257,7 +275,6 @@ The **RegisterCryptoProvider** function allows users to register a Crypto Provid
 
 ```go
 type IKeyring interface {
-  // TODO: review
   RegisterCryptoProvider(typeUUID TypeUUID, builder CryptoProviderBuilder)
   RegisterAndLoadStorageProvider(typeUUID TypeUUID, provider StorageProvider)
 
@@ -297,7 +314,7 @@ type Wallet interface {
 This is a wrapper for the widely used `[]byte` type that is used when handling binary data. Since crypto module handles sensitive information, the objective is to provide some extra security capabilities around such type as:
 
 * Zeroing values after a read operation.
-* Securely handling data.
+* Proper data handling.
 
 These blob structures would be passed within components of the crypto module. For example: Signature information
 
@@ -333,8 +350,6 @@ type BaseKey interface {
 }
 ```
 
-The generator module is responsible for generating such keys.
-
 ##### PubKey
 
 ```go
@@ -361,66 +376,6 @@ type Signature struct {
  data Blob
 }
 ```
-
-TODO: Incorrect diagram
-
-```mermaid
-classDiagram
-
-Keyring <|-- Wallet
-
-SecureStorage <|-- Keyring
-SecureItem <|-- SecureStorage
-CryptoProvider <|-- SecureItem
-
-Hasher <|-- CryptoProvider
-Verifier <|-- CryptoProvider
-Signer <|-- CryptoProvider
-Cipher <|-- CryptoProvider
-Generator <|-- CryptoProvider
-
-PubKey <|-- PrivKey
-PubKey -- Verifier
-Signature <|-- Signer
-Signature <|-- Verifier
-PrivKey -- Signer
-```
-
-#### Module structure
-
-Crypto module structure would look similar to this
-
-- crypto/
-  - docs
-  - keyring/
-    - secure_item
-    - secure_storage
-  - storageProviders
-    - local
-    - remote
-    - etc..
-  - cryptoProvider
-    - ledger
-    - yubikey
-    - local
-    - ....
-  - wallet
-
-  - ???? TODO: correct
-    - cipher/
-      - aes
-      - salsa20
-      - chacha20poly1305
-    - hashing/
-      - shake256
-      - sha3
-      - ....
-    - signing/
-      - secp256k1
-      - secp256r1
-      - ed25519
-      - ...
-    - keys
 
 **Flow overview**
 
@@ -452,7 +407,6 @@ sequenceDiagram
       end
         Keyring->>Wallet: Keyring Instance
 
-    # TODO: Decide if we load everything or not
     Wallet->>Wallet: Init(Keyring)
 
 
@@ -528,7 +482,7 @@ As first approach, the most affected packages are:
 * Single place of truth
 * Easier to use interfaces
 * Easier to extend
-* Unit test for each crypto module
+* Unit test for each crypto package
 * Greater maintainability
 * Incentivize addition of implementations instead of forks
 * Decoupling behaviour from implementation
@@ -557,14 +511,6 @@ As first approach, the most affected packages are:
 >
 > Later, this section can optionally list ideas or improvements the author or
 > reviewers found during the analysis of this ADR.
-
-### Glossary
-
-1. **Interface**: In the context of this document, "interface" refers to Go's interface concept.
-
-2. **Module**: In this document, "module" refers to a Go module. The proposed ADR focuses on the Crypto module V2, which suggests the introduction of a new version of the Crypto module with updated features and improvements.
-
-3. **Package**: In the context of Go, a "package" refers to a unit of code organization. Each proposed architectural unit will be organized into packages for better reutilization and extension.
 
 
 ## References
