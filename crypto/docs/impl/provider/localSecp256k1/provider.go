@@ -30,8 +30,8 @@ func (x *LocalSecp256K1) GetMetadata() provider.ICryptoProviderMetadata {
 	return x
 }
 
-func (x *LocalSecp256K1) GetKeys() ([]byte, []byte, error) {
-	return x.PrivKey, x.PubKey, nil
+func (x *LocalSecp256K1) GetKeys() (*provider.Blob, *provider.SecureBlob, error) {
+	return provider.NewBlob(x.PubKey), provider.NewSecureBlob(x.PrivKey), nil
 }
 
 func (x *LocalSecp256K1) GetSigner() (provider.ISigner, error) {
