@@ -81,6 +81,7 @@ Community Engagement Infrastructure:
 * Structure the design with tools and documentation interfaces in mind, enabling a seamless future rollout of resources for developer engagement.
 
 ## Work Plan
+This work plan describes the expected timelines for the architectural project milestones. We estimate it to be worked on in an estimated period of between 7 to 8 months. The plan offers clear milestones, deadlines, dependencies and interactions, ensuring coordinated efforts and systematic architectural changes by moving forward safely and reviewing each version after each milestone is completed. The goal is to achieve efficient implementation while meeting project objectives. It should be noted that each estimated milestone length is not serial, this means that some milestones are executed overlapped with their next or previous milestone at the beginning or end of the milestone.
 
 ### Phase 1: Foundation & Compatibility
 
@@ -89,20 +90,28 @@ Community Engagement Infrastructure:
 Finalize the Cryptography v2 ADR.
 Publish an initial version of the updated module documentation.
 
+Estimated time: 1 and 1/2 work month.
+
 #### Milestone 2: Modularization & Refactoring
 
 Complete the modular design based on the identified interface standards.
 Successfully refactor and decouple the existing cryptography module.
+
+Estimated time: 2 work months.
 
 #### Milestone 3: Compatibility & Migration
 
 Validate full backward compatibility with previous module versions.
 Develop and conduct initial testing of the migration tools to ensure they are robust and user-friendly.
 
+Estimated time: 2 and 1/2 work months.
+
 #### Milestone 4: Developer Interfaces & Legacy Systems
 
 Release new developer interfaces with sample applications/tools.
 Decide on the incorporation, refactoring, or deprecation of all identified legacy elements.
+
+Estimated time: 1 work month.
 
 ### Phase 2: Extensibility & Enhancement
 
@@ -111,20 +120,28 @@ Decide on the incorporation, refactoring, or deprecation of all identified legac
 Successfully integrate the initial set of plugins and cryptographic tools.
 Release a beta version of the sandbox environment for extensibility testing.
 
+Estimated time: 1 work month.
+
 #### Milestone 6: Advanced Cryptography Integration
 
 Fully integrate and validate post-quantum cryptographic methods.
 Report pilot testing results for the newly integrated cryptographic features.
+
+Estimated time: 2 work months.
 
 #### Milestone 7: Quality Assurance & Audit
 
 Achieve targeted test coverage metrics for the new implementations.
 Complete the external security and functionality audit with any necessary revisions made.
 
+Estimated time: 1 work month.
+
 #### Milestone 8: Full-Scale Deployment & Community Engagement
 
 Officially release the Cryptography Module v2.
 Organize community events, such as webinars or workshops, and gather feedback for potential future enhancements.
+
+Estimated time: 1 work month.
 
 ## References
 

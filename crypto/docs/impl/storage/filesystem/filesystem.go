@@ -65,6 +65,7 @@ func (fsp *FileSystemProvider) Get(itemid storage.ItemId) (*storage.SecureItem, 
 }
 
 func (fsp *FileSystemProvider) Set(item *storage.SecureItem) error {
+	// TODO: this file should be encrypted. See cosmos/keyring@v1.2.0/file.go:124
 	filename := filepath.Join(fsp.path, fmt.Sprintf("%s_%s.json", item.UUID(), item.Slot()))
 	bytes, err := json.Marshal(item)
 	if err != nil {

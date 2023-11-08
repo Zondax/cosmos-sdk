@@ -4,6 +4,33 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+type Blob struct {
+	data []byte
+}
+
+func NewBlob(data []byte) *Blob {
+	return &Blob{data: data}
+}
+
+type SecureBlob struct {
+	blob Blob
+}
+
+func NewSecureBlob(data []byte) *SecureBlob {
+	return &SecureBlob{blob: Blob{data: data}}
+}
+
+func (b *SecureBlob) Zero() {
+	for i := range b.blob.data {
+		b.blob.data[i] = 0
+	}
+}
+
+func (b *SecureBlob) UseAndZero(useKey func(*SecureBlob)) {
+	defer b.Zero()
+	useKey(b)
+}
+
 type ICryptoProviderMetadata interface {
 	GetType() string
 	GetName() string
@@ -14,7 +41,7 @@ type ICryptoProvider interface {
 	GetMetadata() ICryptoProviderMetadata
 	ProtoReflect() protoreflect.Message
 
-	GetKeys() ([]byte, []byte, error)
+	GetKeys() (*Blob, *SecureBlob, error)
 	GetSigner() (ISigner, error)
 	GetVerifier() (IVerifier, error)
 	GetCipher() (ICipher, error)
