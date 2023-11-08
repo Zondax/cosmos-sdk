@@ -22,7 +22,7 @@ DRAFT
 
 This ADR proposes a refactor of the crypto module within the Cosmos SDK. The primary objectives of this overhaul are to enhance modularity, improve reusability, and ensure maintainability while prioritizing an excellent developer experience and integrating best security practices. By clearly defining the scope of each component, refining interfaces, simplifying extensibility, and expanding test coverage, this proposal aims to provide a singular source of truth for developers. This will empower developers to focus on critical aspects while ensuring the secure management of sensitive data within the module.
 
-This ADR introduces several enhancements and, notably, deprecates the proposals outlined in the "Keyring ADR." It's important to emphasize that this new approach will supplant the Keyring ADR, offering a significantly more flexible solution.
+This ADR introduces several enhancements and, notably, deprecates the proposals outlined in the ["Keyring ADR."](https://github.com/cosmos/cosmos-sdk/issues/14940) It's important to emphasize that this new approach will supplant the Keyring ADR, offering a significantly more flexible solution.
 
 Moreover, the proposed refactor facilitates the implementation of the grpc service previously suggested in the Keyring ADR. This is achieved by creating an implementation of the "CryptoProvider" interface outlined in this ADR. This innovation enables HashiCorp plugins to be seamlessly integrated via gRPC, thereby delivering a robust and extensible solution for keyring functionality.
 
