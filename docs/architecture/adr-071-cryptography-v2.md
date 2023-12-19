@@ -2,8 +2,7 @@
 
 ## Change log
 
-* {date}: {change log}
-* ????-??-??: Initial Draft
+* Nov 1st 2023: Initial Draft (Zondax AG: @raynaudoe @bizk @juliantoledano @jleni)
 
 ## Status
 
@@ -19,24 +18,23 @@ while ensuring the secure handling of sensitive data throughout the module.
 
 ## Introduction
 
-This ADR describes the redesign and refactoring of the crypto package:
+This ADR outlines the redesign and refactoring of the crypto package. The design establishes a clear decoupling via interfaces, extension points, and a much more modular design to allow developers to concentrate on application level aspects while ensuring the adequate handling of sensitive data.
+
+Special focus has been placed on the following key aspects:
 
 * modularity
-* security
 * extensibility
-* usability and maintainability
+* security
+* maintainability
 * developer experience
 
 The proposal determines a clear decoupling via interfaces, additional extension points, and a much more modular design to allow developers to application level aspects while ensuring the secure handling of sensitive data when applying this SDK.
 
-The enhancements in this proposal not only render the ["Keyring ADR"](https://github.com/cosmos/cosmos-sdk/issues/14940) obsolete, but also encompass its key aspects, replacing it with a more flexible and comprehensive approach. Furthermore, the gRPC service proposed in the Keyring ADR can be easily implemented as an specialized implementation of the "CryptoProvider" interface defined later in this ADR. This allows for the integration of HashiCorp-like plugins over gRPC, providing a robust and extensible solution for keyring functionality.
+The enhancements in this proposal not only render the ["Keyring ADR"](https://github.com/cosmos/cosmos-sdk/issues/14940) obsolete, but also encompass its key aspects, replacing it with a more flexible and comprehensive approach. Furthermore, the gRPC service proposed in the Keyring ADR can be easily implemented as a specialized implementation of the "CryptoProvider" interface defined later in this ADR. This allows for the integration of HashiCorp-like [go-plugins](https://github.com/hashicorp/go-plugin) over gRPC, providing a robust and extensible solution for keyring functionality.
 
-Furthermore, the grpc service proposed in the Keyring ADR can be easily followed by creating an implementation of the
-"CryptoProvider" interface defined in this ADR. This allows for the integration of HashiCorp plugins over gRPC,
-providing a robust and extensible solution for keyring functionality.
+Furthermore, the grpc service proposed in the Keyring ADR can be easily followed by creating an implementation of the "CryptoProvider" interface defined in this ADR. This allows for the integration of HashiCorp plugins over gRPC, providing a robust and extensible solution for keyring functionality.
 
-By deprecating the previous ADR and introducing these enhancements, the new ADR offers a more comprehensive and
-adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
+By deprecating the previous ADR and introducing these enhancements, the new ADR offers a more comprehensive and adaptable solution for cryptography and address management within the Cosmos SDK ecosystem.
 
 ### Glossary
 
@@ -48,14 +46,18 @@ adaptable solution for cryptography and address management within the Cosmos SDK
 
 ## Context
 
+In order to fully understand the need for changes and improvements to the cryptographic package, it's crucial to consider the current state of affairs:
+
 * The Cosmos SDK currently lacks a comprehensive ADR for the cryptographic package.
+* Type leakage outside the current crypto module pose backward compatibility and extensibility challenges.
 * The demand for a more flexible and extensible approach to cryptography and address management is high.
-* Significant changes are necessary to resolve several open issues.
-* Similar efforts have been made in the past regarding runtime modules.
-* The presence of signing types outside of the crypto module could pose backward compatibility challenges while striving for a clean interface.
+* Architectural changes are necessary to resolve many of the currently open issues.
+* There is a current tread towards modularity in the ICF stack (e.g. runtime modules)
 * Security implications are a critical consideration during the redesign work.
 
 ## Objectives
+
+The key objectives for the Cryptography v2 module are:
 
 Modular Design Philosophy
 
@@ -93,6 +95,8 @@ Quality Assurance
 * Conduct an Audit: After implementation, perform a comprehensive audit to identify potential vulnerabilities and ensure the module's security and stability.
 
 ## Technical Goals
+
+As technical goals, the aim is to create a robust, flexible, and future-proof cryptographic module. This is achieved through the following key points:
 
 Wide Hardware Device & Cloud-based HSM Interface Support:
 
@@ -151,7 +155,7 @@ Through each Crypto provider, users can access functionality such as signing, ve
 
 By abstracting the underlying cryptographic functionality, *Crypto providers* enable a modular and extensible architecture. It allows users to easily switch between different cryptographic implementations without impacting the rest of the system.
 
-```go=
+```go
 type ProviderMetadata interface {
   key string
   value string
@@ -178,7 +182,7 @@ type ICryptoProvider interface {
   Proto.Message
   ICryptoProviderMetadata
   
-  GetKeys() (PubKey, PrivKey, error)    
+  GetKeys() (PubKey, PrivKey, error)
   GetSigner() (ISigner, error)
   GetVerifier() (IVerifier, error)
   GetCipher() (ICipher, error)
@@ -198,7 +202,7 @@ type ISigner interface {
 
 #### Verifier
 
-Verifies if given a message belongs to a public key by validating against it's respective signature.
+Verifies if given a message belongs to a public key by validating against its respective signature.
 
 ```go
 type IVerifier interface {
@@ -237,6 +241,7 @@ Different implementations of *Secure Storage* will be available to cater to vari
 * FileSystem: This implementation stores the Secure Items in a designated folder within the file system.
 * Memory: This implementation stores the Secure Items in memory, providing fast access but limited persistence.
 * KMS: This implementation utilizes the Key Management System available on AWS, GCP, etc.
+* others: 1password, OS-integrated secure storage (macOS, Linux, Windows, etc.)
 
 ```go
 type IStorageProvider interface {
@@ -320,7 +325,7 @@ These blob structures would be passed within components of the crypto module. Fo
 
 #### **Keys**
 
-A key object is responsible for containing the **BLOB** key information. Keys might not be passed through functions and it is
+A key object is responsible for containing the **BLOB** key information. Keys might not be passed through functions, and it is
 suggested to interact through crypto providers to limit the exposure to vulnerabilities.
 
 ```mermaid
@@ -462,7 +467,7 @@ We will:
 ### Backwards Compatibility
 
 Some packages will need a medium to heavy refactor to be compatible with this ADR. 
-In short, every package that uses the current sdk's version of _Keyring_ will need to be adapted to use the new Keyring and CryptoProvider interfaces.
+In short, packages using _Keyring_ (current SDK) will need to be adapted to use the new Keyring and CryptoProvider interfaces.
 Other special cases where a refactor will be needed, are the ones that make use crypto components in isolation like the  _PrivateKey_ and _PublicKey_ structs
 to sign and verify transactions respectively.
 
@@ -499,7 +504,7 @@ As first approach, the most affected packages are:
 
 ## Test Cases
 
-- The code will be unit tested to ensure a high code coverage
+*The code will be unit tested to ensure a high code coverage
 - There should be integration tests around Wallet, keyring and crypto providers.
 - There should be benchmark tests for hashing, keyring, encryption, decryption, signing and verifying functions.
 
@@ -515,4 +520,46 @@ As first approach, the most affected packages are:
 
 ## References
 
-* {reference link}
+* TPM 2.0 support: https://github.com/google/go-tpm
+* Initial basic PKCS#11
+  https://docs.oasis-open.org/pkcs11/pkcs11-base/v3.0/os/pkcs11-base-v3.0-os.pdf
+  https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-library.html
+* https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-key-types.html
+* https://solanacookbook.com/references/keypairs-and-wallets.html#how-to-generate-a-new-keypair
+* https://www.nist.gov/news-events/news/2022/07/nist-announces-first-four-quantum-resistant-cryptographic-algorithms
+* https://blog.cloudflare.com/nist-post-quantum-surprise/
+* https://pkg.go.dev/crypto#Hash
+* https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
+
+## Appendix
+
+### Tentative Primitive Building Blocks
+
+This is a tentative list of primitives that we might want to support. 
+This is not a final list or comprehensive, and it is subject to change. 
+Moreover, it is important to emphasize the purpose of this work allows extensibility so any other primitive can be added in the future.
+
+* digital signatures
+    *  RSA (PSS)
+    *  ECDSA (secp256r1, secp256k1, etc.)
+    *  EdDSA (ed25519, ed448)
+    *  SR25519
+    *  Schnorr
+    *  Lattice-based (Dilithium)
+    *  BLS (BLS12-381, 377?)
+
+* encryption
+    * AES (AES-GCM, AES-CCM)
+    * RSA (OAEP)
+    * salsa20
+    * (x)chacha20 / (x)ChaCha20-Poly1305 (AEAD)
+    * Dilithium
+    * Ntru
+
+* Hashing
+    * sha2 / sha3
+    * RIPEMD-160  
+    * blake2b,2s,3
+    * Keccak-256 / shake256
+    * bcrypt / scrypt / argon2, Argon2d/i/id
+    * Pedersen
